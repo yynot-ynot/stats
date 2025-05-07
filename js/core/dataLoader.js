@@ -1,28 +1,21 @@
 // core/dataLoader.js
 
-import { getLogger } from "../shared/logging/logger.js"; // updated path
-
+import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("fetchers");
 
 /**
- * Fetch list of available .json.gz files in a given directory (requires server with directory listing).
+ * Fetch list of available .json.gz files from a manifest file.
  * @param {string} directoryPath - Path to directory, e.g., "json/"
  * @returns {Promise<string[]>} List of full paths to .json.gz files.
  */
 export async function fetchAvailableJsonFiles(directoryPath) {
-  const response = await fetch(directoryPath);
-  const html = await response.text();
+  const manifestPath = "config/file_manifest.json";
+  const response = await fetch(manifestPath);
+  const filenames = await response.json();
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
+  const files = filenames.map((name) => `${directoryPath}${name}`);
 
-  const links = Array.from(doc.querySelectorAll("a"));
-  const files = links
-    .map((link) => link.getAttribute("href"))
-    .filter((name) => name.endsWith(".json.gz"))
-    .map((name) => `${directoryPath}${name}`);
-
-  logger.info(`Discovered ${files.length} JSON.gz files in ${directoryPath}`);
+  logger.info(`Loaded ${files.length} JSON.gz files from manifest`);
   return files;
 }
 
