@@ -7,6 +7,9 @@ setModuleLogLevel("main", "debug");
 setModuleLogLevel("fetchers", "warn");
 setModuleLogLevel("chartRenderer", "warn");
 
+// Path to the manifest file listing JSON assets
+export const FILE_MANIFEST_PATH = "js/config/file_manifest.json";
+
 // Filters required before rendering begins
 export const REQUIRED_FILTERS = ["class-select"];
 

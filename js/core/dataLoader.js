@@ -1,6 +1,7 @@
 // core/dataLoader.js
 
 import { getLogger } from "../shared/logging/logger.js";
+import { FILE_MANIFEST_PATH } from "../config/appConfig.js";
 const logger = getLogger("fetchers");
 
 /**
@@ -9,8 +10,7 @@ const logger = getLogger("fetchers");
  * @returns {Promise<string[]>} List of full paths to .json.gz files.
  */
 export async function fetchAvailableJsonFiles(directoryPath) {
-  const manifestPath = "config/file_manifest.json";
-  const response = await fetch(manifestPath);
+  const response = await fetch(FILE_MANIFEST_PATH);
   const filenames = await response.json();
 
   const files = filenames.map((name) => `${directoryPath}${name}`);
