@@ -1,0 +1,37 @@
+/* General Layout */
+body {
+  font-family: sans-serif;
+  padding: 1rem 2rem;
+  background-color: #f9f9f9;
+}
+
+/* Heading Styling */
+h1 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+/* Container for dynamic content */
+#table-container {
+  margin-top: 1rem;
+}
+
+/* Table Styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 1rem;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+th,
+td {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+th {
+  background-color: #efefef;
+}

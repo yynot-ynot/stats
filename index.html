@@ -1,220 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DPS Dashboard POC</title>
-  <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; }
-    #app { display: flex; flex-direction: row; height: 100vh; }
-    #sidebar {
-      width: 250px;
-      padding: 1rem;
-      border-right: 1px solid #ddd;
-      overflow-y: auto;
-      background-color: #f9f9f9;
-    }
-    #main {
-      flex: 1;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-    }
-    .spinner { font-style: italic; color: gray; }
-    .tabs { display: flex; gap: 1rem; margin: 1rem 0; }
-    .tab { cursor: pointer; padding: 0.5rem 1rem; border: 1px solid #ccc; border-radius: 4px; }
-    .tab.active { background-color: #ddd; font-weight: bold; }
-    .controls { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    canvas { max-width: 100%; height: 400px; }
-    .class-group { margin-bottom: 1rem; }
-    .class-group label { display: block; font-weight: bold; margin-top: 0.5rem; }
-    .class-btn { margin: 0.2rem; padding: 0.3rem 0.6rem; font-size: 0.85rem; border: 1px solid #aaa; border-radius: 3px; cursor: pointer; }
-    .class-btn.selected { background-color: #bbb; }
-  </style>
+  <title>FFLogs DPS & Healing Viewer</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <script type="module" src="js/core/initLauncher.js"></script>
+
+  <link rel="icon" href="assets/favicon.ico" />
 </head>
+
 <body>
-  <div id="app">
-    <div id="sidebar">
-      <div id="status" class="spinner">Checking available data...</div>
-      <div class="class-group" id="classFilters"></div>
-    </div>
-    <div id="main">
-      <div class="tabs" id="dpsTabs"></div>
-      <div class="controls">
-        <label>Raid: <select id="raidSelect"></select></label>
-        <label>Boss: <select id="bossSelect"></select></label>
-        <label>Percentile: <select id="percentileSelect"></select></label>
-      </div>
-      <canvas id="dpsChart"></canvas>
-    </div>
+  <h1>FFLogs DPS & Healing Viewer</h1>
+
+  <div id="filters">
+    <label for="raid-select">Raid:</label>
+    <select id="raid-select"></select>
+
+    <label for="boss-select">Boss:</label>
+    <select id="boss-select"></select>
+
+    <label for="percentile-select">Percentile:</label>
+    <select id="percentile-select"></select>
+
+    <label for="class-select">Class:</label>
+    <select id="class-select" multiple></select>
+
+    <label for="dps-type-select">DPS Type:</label>
+    <select id="dps-type-select"></select>
+
+    <label for="percentile-reference-select">Reference Percentile:</label>
+    <select id="percentile-reference-select"></select>
+
+    <label for="percentile-compare-select">Comparison Percentiles:</label>
+    <select id="percentile-compare-select" multiple></select>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const dummyData = [
-      { date: "20250408", raid: "AAC", boss: "Brute Bomber", dps_type: "rdps", percentile: 95, class: "Samurai", dps: 14300, parses: 110 },
-      { date: "20250408", raid: "AAC", boss: "Brute Bomber", dps_type: "rdps", percentile: 95, class: "Black Mage", dps: 14100, parses: 95 },
-      { date: "20250409", raid: "AAC", boss: "Brute Bomber", dps_type: "rdps", percentile: 95, class: "Samurai", dps: 14500, parses: 123 },
-      { date: "20250409", raid: "AAC", boss: "Brute Bomber", dps_type: "rdps", percentile: 95, class: "Black Mage", dps: 13900, parses: 100 },
-    ];
-
-    const dpsTypes = ["rdps", "adps", "ndps", "cdps"];
-    const classGroups = {
-      Tank: ["PLD", "WAR", "DRK", "GNB"],
-      Healer: ["WHM", "SCH", "AST", "SGE"],
-      Melee: ["SAM", "NIN", "DRG", "RPR"],
-      Caster: ["BLM", "RDM", "SMN"],
-      Ranged: ["BRD", "DNC", "MCH"]
-    };
-
-    let selectedDpsType = "rdps";
-    const selectedClasses = new Set(Object.values(classGroups).flat());
-    let chart;
-
-    const chartCtx = document.getElementById("dpsChart").getContext("2d");
-
-    function populateTabs() {
-      const container = document.getElementById("dpsTabs");
-      container.innerHTML = "";
-      dpsTypes.forEach(type => {
-        const tab = document.createElement("div");
-        tab.textContent = type;
-        tab.className = "tab" + (type === selectedDpsType ? " active" : "");
-        tab.onclick = () => {
-          selectedDpsType = type;
-          populateTabs();
-          populateSelectors();
-          updateChart();
-        };
-        container.appendChild(tab);
-      });
-    }
-
-    function populateSelectors() {
-      const raidSet = new Set();
-      const bossSet = new Set();
-      const percentileSet = new Set();
-
-      dummyData.forEach(row => {
-        if (row.dps_type === selectedDpsType) {
-          raidSet.add(row.raid);
-          bossSet.add(row.boss);
-          percentileSet.add(row.percentile);
-        }
-      });
-
-      function fill(selectId, values) {
-        const select = document.getElementById(selectId);
-        select.innerHTML = "";
-        Array.from(values).sort().forEach(val => {
-          const option = document.createElement("option");
-          option.value = val;
-          option.textContent = val;
-          select.appendChild(option);
-        });
-      }
-
-      fill("raidSelect", raidSet);
-      fill("bossSelect", bossSet);
-      fill("percentileSelect", percentileSet);
-    }
-
-    function populateClassFilters() {
-      const container = document.getElementById("classFilters");
-      container.innerHTML = "";
-
-      Object.entries(classGroups).forEach(([group, classes]) => {
-        const label = document.createElement("label");
-        label.textContent = group + ":";
-        container.appendChild(label);
-
-        classes.forEach(cls => {
-          const btn = document.createElement("button");
-          btn.textContent = cls;
-          btn.className = "class-btn selected";
-          btn.onclick = () => {
-            if (selectedClasses.has(cls)) {
-              selectedClasses.delete(cls);
-              btn.classList.remove("selected");
-            } else {
-              selectedClasses.add(cls);
-              btn.classList.add("selected");
-            }
-            updateChart();
-          };
-          container.appendChild(btn);
-        });
-      });
-    }
-
-    function updateChart() {
-      const raid = document.getElementById("raidSelect").value;
-      const boss = document.getElementById("bossSelect").value;
-      const percentile = parseInt(document.getElementById("percentileSelect").value);
-
-      const filtered = dummyData.filter(d =>
-        d.dps_type === selectedDpsType &&
-        d.raid === raid &&
-        d.boss === boss &&
-        d.percentile === percentile &&
-        selectedClasses.has(d.class)
-      );
-
-      const classGroups = [...new Set(filtered.map(d => d.class))];
-
-      const datasets = classGroups.map(cls => {
-        const points = filtered.filter(d => d.class === cls).map(d => ({
-          x: d.date,
-          y: d.dps,
-          parses: d.parses
-        }));
-        return {
-          label: cls,
-          data: points,
-          parsing: false
-        };
-      });
-
-      if (chart) chart.destroy();
-      chart = new Chart(chartCtx, {
-        type: "scatter",
-        data: { datasets },
-        options: {
-          responsive: true,
-          plugins: {
-            tooltip: {
-              callbacks: {
-                label: ctx => `${ctx.dataset.label} - DPS: ${ctx.raw.y}, Parses: ${ctx.raw.parses}`
-              }
-            }
-          },
-          scales: {
-            x: {
-              title: { display: true, text: "Date" },
-              type: "category"
-            },
-            y: {
-              title: { display: true, text: "DPS (flexible logic later)" }
-            }
-          }
-        }
-      });
-    }
-
-    async function initialize() {
-      document.getElementById("status").textContent = "Ready";
-      populateTabs();
-      populateSelectors();
-      populateClassFilters();
-      updateChart();
-
-      ["raidSelect", "bossSelect", "percentileSelect"].forEach(id => {
-        document.getElementById(id).onchange = updateChart;
-      });
-    }
-
-    window.onload = initialize;
-  </script>
+  <div id="dps-plot-container" style="margin-top: 2rem;"></div>
+  <div id="healing-plot-container" style="margin-top: 2rem;"></div>
 </body>
-</html>
 
+</html>
