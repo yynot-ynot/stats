@@ -35,3 +35,816 @@ td {
 th {
   background-color: #efefef;
 }
+
+/* Filter container: stack vertically */
+#filters {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header dropdown triggers */
+.selectable-title,
+.selectable-subheader {
+  cursor: pointer;
+  text-decoration: underline;
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+.selectable-title::after,
+.selectable-subheader::after {
+  content: " ▼";
+  font-size: 0.8em;
+  margin-left: 0.3rem;
+}
+
+/* Non-interactive state: no underline, no chevron, no pointer */
+.non-interactive {
+  cursor: default;
+  text-decoration: none;
+}
+
+.non-interactive::after {
+  content: "";
+}
+
+/* Custom dropdown container (overlay style) */
+.custom-dropdown {
+  position: absolute;
+  background: white;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: max-content;
+  min-width: 200px;
+  z-index: 100;
+}
+
+/* Individual option inside custom dropdown */
+.custom-dropdown div {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.custom-dropdown div:hover {
+  background-color: #f0f0f0;
+}
+
+/* Hide dropdown by default */
+.hidden-dropdown {
+  display: none;
+}
+
+/* Show dropdown when active */
+.shown-dropdown {
+  display: block;
+}
+
+/* Optional: hide the original select elements */
+#raid-select,
+#boss-select {
+  display: none;
+}
+
+
+
+/* ==========================================================================
+   FFXIV Percentile/Reference/Comparison Slider Styles
+   --------------------------------------------------------------------------
+   - This section styles the three main slider controls:
+     1. Main Percentile Slider
+     2. Reference Percentile Slider
+     3. Comparison Percentile Selector
+   - All are centered, full-width, and visually aligned
+   ========================================================================== */
+
+#percentile-slider-container,
+#reference-percentile-container,
+#comparison-slider-container {
+  width: 100%;
+  /* Make slider containers span full width of parent */
+  max-width: 800px;
+  /* (Optional) Set a sensible max width for desktop, adjust as needed */
+  margin: 1rem auto;
+  /* Center horizontally using auto margins */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Center the slider and label horizontally */
+  box-sizing: border-box;
+}
+
+#percentile-slider-container {
+  z-index: 101;
+}
+
+.percentile-slider-row,
+.comparison-slider-row {
+  width: 100%;
+  /* Full width of their container */
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+}
+
+#percentile-slider,
+#reference-percentile-slider {
+  width: 100%;
+  margin: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  background: transparent;
+  pointer-events: auto;
+  height: 44px;
+  cursor: pointer;
+  /* Hide the native track & thumb cross-browser */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* Hide the native track - Webkit/Blink (Chrome, Safari, Edge) */
+#percentile-slider::-webkit-slider-runnable-track,
+#reference-percentile-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 44px;
+  border: none;
+  box-shadow: none;
+}
+
+/* Hide the native track - Firefox */
+#percentile-slider::-moz-range-track,
+#reference-percentile-slider::-moz-range-track {
+  background: transparent;
+  height: 44px;
+  border: none;
+  box-shadow: none;
+}
+
+/* Hide the native track - IE/Edge */
+#percentile-slider::-ms-fill-lower,
+#percentile-slider::-ms-fill-upper,
+#reference-percentile-slider::-ms-fill-lower,
+#reference-percentile-slider::-ms-fill-upper {
+  background: transparent;
+  border: none;
+}
+
+/* Hide the native thumb - cross-browser */
+#percentile-slider::-webkit-slider-thumb,
+#reference-percentile-slider::-webkit-slider-thumb {
+  opacity: 0;
+  pointer-events: none;
+  appearance: none;
+}
+
+#percentile-slider::-moz-range-thumb,
+#reference-percentile-slider::-moz-range-thumb {
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+}
+
+#percentile-slider::-ms-thumb,
+#reference-percentile-slider::-ms-thumb {
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+}
+
+#percentile-slider:focus,
+#reference-percentile-slider:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Hide the native progress bar in Firefox */
+#percentile-slider::-moz-range-progress,
+#reference-percentile-slider::-moz-range-progress {
+  background: transparent;
+}
+
+/* Remove IE extra ticks */
+#percentile-slider::-ms-ticks-before,
+#percentile-slider::-ms-ticks-after,
+#reference-percentile-slider::-ms-ticks-before,
+#reference-percentile-slider::-ms-ticks-after {
+  display: none;
+}
+
+/* Remove the native range input background in IE */
+#percentile-slider::-ms-tooltip,
+#reference-percentile-slider::-ms-tooltip {
+  display: none;
+}
+
+#reference-percentile-container .slider-tick-label {
+  display: none !important;
+}
+
+.slider-tick-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 44px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Custom thumb overlay, positioned via JS */
+.slider-thumb-custom {
+  position: absolute;
+  /* Move the diamond up by half its height */
+  top: -20px;
+  /* half of 40px height, so it's nicely above the track */
+  left: 0;
+  width: 22px;
+  height: 40px;
+  /* SVG: no border, no box-shadow, just pure crystal */
+  background: url('data:image/svg+xml;utf8,<svg width="22" height="40" viewBox="0 0 22 40" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="11,0 22,16 11,40 0,16" fill="url(%23crystalGradient)"/><defs><linearGradient id="crystalGradient" x1="11" y1="0" x2="11" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="%23d8f7ff"/><stop offset="0.45" stop-color="%236bc8ff"/><stop offset="0.7" stop-color="%233897cb"/><stop offset="1" stop-color="%231166aa"/></linearGradient></defs></svg>') no-repeat center center / contain;
+  border: none;
+  box-shadow: none;
+  transform: translateX(-50%);
+  z-index: 102;
+  pointer-events: none;
+  transition: left 0.12s cubic-bezier(0.8, 0, 0.2, 1);
+}
+
+/* Glassy highlight, slim and vertical for a jewel shine */
+.slider-thumb-custom::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(180deg, #fff9 40%, #fff2 70%, transparent 100%);
+  border-radius: 1.5px;
+  transform: rotate(-45deg);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.slider-tick {
+  position: absolute;
+  width: 2px;
+  height: 16px;
+  background: #444;
+  top: 4px;
+  transform: translateX(-1px);
+  z-index: 3;
+}
+
+.slider-tick.selected {
+  background: #ffcc00;
+  height: 20px;
+}
+
+.slider-tick-label {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.85em;
+  color: #333;
+  font-weight: bold;
+  white-space: nowrap;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+
+.slider-tick-label.visible {
+  opacity: 1;
+}
+
+/* Hide the value display under slider as it's now redundant */
+.medieval-slider-selected-value {
+  display: none;
+}
+
+/* ==========================================================================
+   Comparison Percentile Value Selector (Single-Line Style)
+   --------------------------------------------------------------------------
+   - Single line of clickable values.
+   - Blue background and white text when selected, gray otherwise.
+   ========================================================================== */
+
+.comparison-label-row {
+  width: 100%;
+  position: relative;
+  height: 44px;
+}
+
+.comparison-value-label {
+  display: inline-block;
+  min-width: 2.2em;
+  /* slightly less wide for a more circular look */
+  height: 2.2em;
+  /* ensure consistent height for roundness */
+  line-height: 2.2em;
+  /* vertically center the text */
+  text-align: center;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: #888;
+  background: none;
+  border-radius: 50%;
+  /* perfect circle (or close to it) */
+  padding: 0;
+  /* let min-width and height set the shape */
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  user-select: none;
+  position: absolute;
+  /* Positioning left is set dynamically with JS for proportional spread */
+  top: 4px;
+}
+
+.comparison-value-label.selected {
+  color: #fff;
+  background: #60aaff;
+}
+
+#comparison-slider-container {
+  margin-top: -46px;
+  /* or -20px for more overlap, adjust to taste */
+  /* Optionally: set z-index higher if needed */
+  z-index: 2;
+}
+
+/* But labels inside should remain clickable */
+.comparison-label-row,
+.comparison-value-label {
+  pointer-events: auto;
+}
+
+#percentile-label,
+#reference-percentile-label {
+  display: block;
+  margin-bottom: 5rem;
+}
+
+/* ==========================================================================
+   Class Sidebar: Grouped Icon Layout and Section Headers
+   --------------------------------------------------------------------------
+   - Shows class icons grouped by role (Tank, Healer, DPS).
+   - 4 icons per row, with clear section headers.
+   - Responsive, wider sidebar for neat layout.
+   ========================================================================== */
+
+#class-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 310px;
+  /* Increased for 4 icons + gap + padding */
+  min-width: 300px;
+  /* Minimum width to avoid wrapping */
+  max-width: 420px;
+  /* You can keep this as a safety limit */
+  height: 100%;
+  background: #ffffff;
+  border-left: 1px solid #ccc;
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+  padding: 1.2rem 1rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transform: translateX(0);
+  transition: transform 0.3s ease;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+/* Section header for each group */
+.class-group-header {
+  font-size: 1.08rem;
+  font-weight: bold;
+  color: #2582ca;
+  margin: 0.6rem 0 0.1rem 0.3rem;
+  letter-spacing: 0.5px;
+}
+
+/* Collapsed (hidden) sidebar */
+#class-sidebar.collapsed {
+  transform: translateX(100%);
+}
+
+/* ==========================================================================
+   Persistent "Classes" Label Toggle & Mini Icon List
+   --------------------------------------------------------------------------
+   - The entire #sidebar-label-container is clickable, not just the label text.
+   - Vertical stack: label on top, selected mini-icons beneath.
+   - Visible when sidebar is collapsed, disappears when open.
+   - Large clickable area, right-aligned, above sidebar.
+   ========================================================================== */
+#sidebar-label-container {
+  position: fixed;
+  right: 0;
+  top: 5.4rem;
+  width: 108px;
+  min-height: 40px;
+  z-index: 110;
+  background: #fff;
+  color: #2582ca;
+  border: 1px solid #ccc;
+  border-left: none;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  font-weight: bold;
+  font-size: 1.05rem;
+  text-align: center;
+  box-shadow: -2px 1px 8px 0 #0002;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  padding-bottom: 0.4rem;
+  /* Space for mini icons */
+}
+
+/* Classes label at the top */
+#sidebar-label-container .label-text,
+#sidebar-classes-label {
+  /* .label-text for new markup, #sidebar-classes-label for backward compatibility */
+  width: 100%;
+  height: 40px;
+  line-height: 40px;
+  font-weight: bold;
+  font-size: 1.05rem;
+  color: #2582ca;
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  outline: none;
+  /* Remove default button styles if present */
+  box-shadow: none;
+  text-align: center;
+  user-select: none;
+}
+
+/* Focus/active state for accessibility */
+#sidebar-label-container:active,
+#sidebar-label-container:focus,
+#sidebar-label-container .label-text:active,
+#sidebar-label-container .label-text:focus,
+#sidebar-classes-label:active,
+#sidebar-classes-label:focus {
+  background: #eaf5ff;
+  color: #005cbf;
+  outline: none;
+}
+
+/* Vertical mini-icon list beneath the label */
+#sidebar-selected-icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0.2rem;
+}
+
+/* Each mini icon is small and has a subtle border/highlight */
+.mini-class-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #f9f9f9;
+  border: 1.5px solid #e3c17a;
+  box-shadow: 0 1px 4px #ffd07344;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-class-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: none;
+}
+
+/* ==========================================================================
+   Class Sidebar: Icon Container and Icon Rows
+   --------------------------------------------------------------------------
+   - #class-icons-container now flex-columns group sections,
+     not all icons flat in a single wrap row.
+   ========================================================================== */
+#class-icons-container {
+  display: flex;
+  flex-direction: column;
+  /* Stacks each group-section vertically */
+  gap: 1.2rem;
+  justify-content: flex-start;
+  /* Top-aligned, not centered vertically */
+  align-items: stretch;
+}
+
+.class-icon-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  width: 100%;
+  /* Always row is full sidebar width */
+  justify-content: flex-start;
+  /* Or center if you want centered icons when fewer */
+  min-height: 64px;
+  /* At least one icon tall */
+}
+
+/* ==========================================================================
+   Class Sidebar: Icon Grid Slot (Shared Base)
+   --------------------------------------------------------------------------
+   - .icon-slot: Shared 64x64px cell for both single and paired class icons.
+   - Use for .class-icon and .paired-healer-icon for identical alignment/gap.
+   ========================================================================== */
+.icon-slot,
+.class-icon,
+.paired-healer-icon {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  transition: border-color 0.15s;
+  /* For .class-icon border, add below */
+}
+
+/* Selection outline for any selected icon */
+.icon-slot.selected,
+.class-icon.selected,
+.paired-healer-icon.selected {
+  outline: 2.5px solid #ffce63;
+  outline-offset: 2px;
+  border-radius: 16px;
+  background: none;
+  border-color: transparent !important;
+  box-shadow: none;
+  position: relative;
+}
+
+/* ==========================================================================
+   Single Class Icon Styles (inside .icon-slot)
+   ========================================================================== */
+.class-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 0;
+  background: none;
+}
+
+.class-icon .fallback-label {
+  display: block;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #555;
+  line-height: 64px;
+  white-space: normal;
+  padding: 0 2px;
+  background: #f7f7f7;
+  border-radius: 6px;
+}
+
+.class-icon.selected::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 60px;
+  height: 60px;
+  border: 4px solid #ffd073;
+  border-radius: 10px;
+  pointer-events: none;
+  box-sizing: border-box;
+  z-index: 2;
+  box-shadow:
+    0 0 12px 3px #ffd073,
+    0 0 4px 2px #fffbe2 inset;
+  background: none;
+}
+
+/* ==========================================================================
+   Paired Healer Icon Styles - Large Overlapping Badge Avatars
+   ========================================================================== */
+.paired-healer-icon {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  position: relative;
+}
+
+/* Center avatars in 64x64, but allow them to be big and overlap */
+.paired-healer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  position: relative;
+}
+
+/* Both avatars: same size, no border by default */
+.paired-healer-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: cover;
+  box-shadow: 0 1px 6px #ffd07344;
+  position: relative;
+  z-index: 1;
+  transition: box-shadow 0.13s;
+  border: none;
+  /* Remove border from all by default */
+}
+
+/* Only the second (front) avatar gets the border */
+.paired-healer-img+.paired-healer-img {
+  margin-left: -18px;
+  z-index: 2;
+  border: none;
+  /* Border only on front image */
+}
+
+/* Hide plus for overlap style */
+.paired-plus {
+  display: none !important;
+}
+
+/* Selected state matches singles */
+.paired-healer-icon.selected {
+  outline: 2.5px solid #ffce63;
+  outline-offset: 2px;
+  border-radius: 18px;
+  background: none;
+}
+
+/* ==========================================================================
+   Mini Icon Styles (collapsed sidebar)
+   ========================================================================== */
+.mini-class-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  background: #f9f9f9;
+  border: none;
+  box-shadow: 0 1px 4px #ffd07344;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-healer-pair-img {
+  width: 42px;
+  height: 42px;
+  border: none;
+  background: #fff;
+  object-fit: cover;
+  box-shadow: 0 1px 3px #ffd07344;
+  position: relative;
+  transition: box-shadow 0.13s;
+}
+
+/* Default mini icon images */
+.mini-class-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: none;
+}
+
+/* Overlapping mini paired healer icons in collapsed sidebar label */
+.mini-healer-pair-mini {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  /* Remove gap for proper overlap */
+  gap: 0;
+  padding: 0 2px;
+}
+
+
+/* Overlap the second avatar on top of the first */
+.mini-healer-pair-img+.mini-healer-pair-img {
+  margin-left: -10px;
+  z-index: 2;
+}
+
+/* Optional: Remove border from the back icon for visual clarity */
+.mini-healer-pair-img:first-child {
+  border: none;
+}
+
+.paired-plus-mini {
+  display: none !important;
+}
+
+/* ==========================================================================
+   DPS Metric Selector (Sidebar-Top Style)
+   --------------------------------------------------------------------------
+   - Replaces sidebar-info-bar
+   - Right-fixed, same style/width/height as previous info bar
+   ========================================================================== */
+#dps-type-label-container {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 108px;
+  min-height: 40px;
+  z-index: 111;
+  background: #fff;
+  color: #2582ca;
+  border: 1px solid #ccc;
+  border-left: none;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  font-weight: bold;
+  font-size: 1.05rem;
+  text-align: center;
+  box-shadow: -2px 1px 8px 0 #0002;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  padding-bottom: 0.4rem;
+  /* Space for metric value */
+}
+
+#dps-metric-label {
+  width: 100%;
+  height: 40px;
+  line-height: 40px;
+  font-weight: bold;
+  font-size: 1.05rem;
+  color: #2582ca;
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  text-align: center;
+  user-select: none;
+}
+
+#dps-type-selected-label {
+  font-size: 1.08rem;
+  color: #005cbf;
+  font-weight: 700;
+  background: #fff;
+  border-radius: 7px;
+  padding: 3px 12px;
+    display: flex;
+      align-items: center;
+      justify-content: center;
+  min-width: 56px;
+  height: 32px;
+  box-shadow: 0 1px 5px #c1e5ff33;
+  border: 1.5px solid #b8dfff;
+}
+
+#dps-type-label-container:active,
+#dps-type-label-container:focus {
+  background: #d6eeff;
+  outline: none;
+}

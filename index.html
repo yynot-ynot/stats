@@ -3,44 +3,80 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>FFLogs DPS & Healing Viewer</title>
+  <title>FFXIV DPS and Healing Trend</title>
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-
   <script type="module" src="js/core/initLauncher.js"></script>
-
   <link rel="icon" href="assets/favicon.ico" />
 </head>
 
 <body>
-  <h1>FFLogs DPS & Healing Viewer</h1>
+  <h1>FFXIV DPS and Healing Trend</h1>
 
   <div id="filters">
-    <label for="raid-select">Raid:</label>
-    <select id="raid-select"></select>
+    <!-- Raid Title and Custom Dropdown -->
+    <div class="dropdown-section">
+      <h2 id="raid-title" class="selectable-title">[Select Raid]</h2>
+      <div id="raid-dropdown" class="custom-dropdown hidden-dropdown"></div>
+    </div>
 
-    <label for="boss-select">Boss:</label>
-    <select id="boss-select"></select>
+    <!-- Boss Subheader and Custom Dropdown -->
+    <div class="dropdown-section">
+      <h3 id="boss-subheader" class="selectable-subheader">[Select Boss]</h3>
+      <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
+    </div>
 
-    <label for="percentile-select">Percentile:</label>
-    <select id="percentile-select"></select>
+    <!-- Hidden backing <select> elements -->
+    <select id="raid-select" style="display: none"></select>
+    <select id="boss-select" style="display: none"></select>
 
-    <label for="class-select">Class:</label>
-    <select id="class-select" multiple></select>
+    <!-- Medieval Percentile Slider -->
+    <div id="percentile-slider-container">
+      <label id="percentile-label" style="display: block; margin-bottom: 0.5rem;">
+        Percentile:
+      </label>
+      <input id="percentile-slider" type="range" />
+      <!-- Overlay for ticks and labels (generated dynamically) -->
+      <div class="slider-tick-overlay"></div>
+      <div class="medieval-slider-selected-value"></div>
+    </div>
 
-    <label for="dps-type-select">DPS Type:</label>
-    <select id="dps-type-select"></select>
-
-    <label for="percentile-reference-select">Reference Percentile:</label>
-    <select id="percentile-reference-select"></select>
-
-    <label for="percentile-compare-select">Comparison Percentiles:</label>
-    <select id="percentile-compare-select" multiple></select>
   </div>
 
+  <!-- Plot Containers -->
   <div id="dps-plot-container" style="margin-top: 2rem;"></div>
   <div id="healing-plot-container" style="margin-top: 2rem;"></div>
+
+  <!-- Comparison Percentile Filters (moved below plots) -->
+  <div id="reference-percentile-container" style="margin-top: 2rem;"></div>
+  <div id="comparison-slider-container"></div>
+
+  <div id="dps-comparison-plot-container" style="margin-top: 2rem;"></div>
+  <div id="healing-comparison-plot-container" style="margin-top: 2rem;"></div>
+  <div id="comparison-message" style="margin-top: 1rem; color: #d66; font-weight: bold;"></div>
+
+  <!-- ==== DPS Metric Selector (REPLACES sidebar-info-bar) ==== -->
+  <div id="dps-type-label-container" tabindex="0" role="button" aria-label="Show/hide DPS metric sidebar">
+    <div id="dps-metric-label">DPS Metric</div>
+    <div id="dps-type-selected-label"></div>
+    <!-- Hidden select for accessibility/fallback -->
+    <select id="dps-type-select" style="display: none"></select>
+  </div>
+
+  <!-- Persistent, clickable Classes label (acts as sidebar toggle) -->
+  <div id="sidebar-label-container" tabindex="0" role="button" aria-label="Show/hide class sidebar">
+    <div id="sidebar-classes-label">Classes</div>
+    <div id="sidebar-selected-icons"></div>
+  </div>
+
+  <!-- Class Selection Sidebar -->
+  <div id="class-sidebar" class="collapsed">
+    <h2>Classes</h2>
+    <div id="class-icons-container">
+      <!-- Dynamically populated class icons go here -->
+    </div>
+  </div>
 </body>
 
 </html>
