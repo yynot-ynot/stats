@@ -1,3 +1,8 @@
+import { parsePairedHealerClasses } from "./classSidebarManager.js";
+import {
+  getDisplayLabelForClass,
+  getAdjustedValueForClass,
+} from "./valueDisplayUtils.js";
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("chartRenderer");
 
@@ -37,18 +42,25 @@ function parseCompactDate(dateStr) {
 
 /**
  * Filter the dataset based on provided filter values.
+ * Optionally expands any paired/composite class names in the classNames filter
+ * (used for HPS; not for DPS). Non-paired classes are always included as-is.
+ *
  * @param {Array<Object>} data - Full dataset.
  * @param {Object} filters - Filter criteria.
+ * @param {boolean} [expandPairs=false] - Whether to expand paired/composite class names.
  * @returns {Array<Object>} Filtered dataset.
  */
-function applyFilters(data, filters) {
+function applyFilters(data, filters, expandPairs = false) {
   const { raid, boss, percentile, classNames, dps_type } = filters;
+  const classNamesToUse = expandPairs
+    ? expandSelectedClasses(classNames)
+    : classNames;
   return data.filter((entry) => {
     return (
       (!raid || entry.raid === raid) &&
       (!boss || entry.boss === boss) &&
       (!percentile || entry.percentile === Number(percentile)) &&
-      classNames.includes(entry.class) &&
+      classNamesToUse.includes(entry.class) &&
       (!dps_type || entry.dps_type === dps_type)
     );
   });
@@ -92,6 +104,10 @@ function groupDataByClass(filtered) {
 
 /**
  * Prepare Plotly traces and log their details.
+ * For DPS: composite (paired) healers have their values halved, and legend/tooltip shows "Avg.(PairName)".
+ * For HPS: composite (paired) and individual healers are both shown as-is.
+ * Non-paired (individual) jobs are always unaffected.
+ *
  * @param {Object} grouped - Grouped data by class.
  * @param {boolean} isDPS - Whether the plot is DPS or Healing.
  * @returns {Array<Object>} Plotly traces.
@@ -101,14 +117,21 @@ function prepareTraces(grouped, isDPS) {
     const sortedPoints = points.sort(
       (a, b) => parseCompactDate(a.rawDate) - parseCompactDate(b.rawDate)
     );
+
+    // For DPS: use adjusted value (halved for composite), and label as "Avg.(PairName)"
+    // For HPS: plot as-is, both composite and individual lines
     const traceX = sortedPoints.map((p) => p.x);
-    const traceY = sortedPoints.map((p) => p.y);
+    const traceY = isDPS
+      ? sortedPoints.map((p) => getAdjustedValueForClass(key, p.y))
+      : sortedPoints.map((p) => p.y);
     const traceCustom = sortedPoints.map((p) => [
-      p.customdata.class,
+      p.customdata.class, // original class (composite or single)
       p.customdata.parses,
       p.customdata.percentile,
       p.customdata.dps_type,
-      p.y,
+      p.y, // raw value
+      isDPS ? getAdjustedValueForClass(key, p.y) : p.y, // adjusted value for DPS (halved if composite)
+      getDisplayLabelForClass(key), // legend/label
     ]);
 
     logger.debug(`Trace for class ${key}:`);
@@ -123,16 +146,16 @@ function prepareTraces(grouped, isDPS) {
     return {
       type: "scatter",
       mode: "lines+markers",
-      name: key,
+      name: getDisplayLabelForClass(key),
       x: traceX,
       y: traceY,
       customdata: traceCustom,
       hovertemplate: isDPS
         ? `
-          Class: %{customdata[0]}<br>
+          Class: %{customdata[6]}<br>
           Parses: %{customdata[1]}<br>
           Percentile: %{customdata[2]}<br>
-          DPS: %{customdata[4]} (%{customdata[3]})
+          DPS: %{customdata[5]} (%{customdata[3]})
           <extra></extra>
         `
         : `
@@ -211,6 +234,10 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
 
 /**
  * Main function to render the filtered line chart.
+ * Handles DPS and HPS requirements for paired healers.
+ * - For HPS: plots both individual and paired lines if selected.
+ * - For DPS: plots the paired line with DPS halved, using "Avg.(PairName)" as label, individuals unaffected.
+ *
  * @param {Array<Object>} data - Full dataset.
  * @param {Object} filters - Filter criteria.
  * @param {HTMLElement} container - DOM element for the chart.
@@ -222,7 +249,29 @@ export function renderFilteredLineChart(
   container,
   titleSuffix = ""
 ) {
-  const filtered = applyFilters(data, filters);
+  let filtered;
+  const isDPS = titleSuffix.toLowerCase().includes("dps");
+
+  if (isDPS) {
+    // For DPS: Only use the selected class names as-is (including pairs)
+    filtered = applyFilters(data, filters, false);
+  } else {
+    // For HPS:
+    // 1. Plot all individual healers (expand pairs into individuals)
+    const individualRows = applyFilters(data, filters, true);
+    // 2. Plot all paired healers (match exact paired names in selection)
+    const pairedNames = filters.classNames.filter((n) =>
+      parsePairedHealerClasses(n)
+    );
+    let pairedRows = [];
+    if (pairedNames.length > 0) {
+      const pairedFilters = { ...filters, classNames: pairedNames };
+      pairedRows = applyFilters(data, pairedFilters, false);
+    }
+    // Merge and dedup rows so we don't double plot if data is the same
+    filtered = mergeAndDedup(individualRows, pairedRows);
+  }
+
   logger.debug(`Filtered data count: ${filtered.length}`);
 
   const { grouped, allDates } = groupDataByClass(filtered);
@@ -235,7 +284,6 @@ export function renderFilteredLineChart(
     return `${dt.getMonth() + 1}/${dt.getDate()}`;
   });
 
-  const isDPS = titleSuffix.toLowerCase().includes("dps");
   const traces = prepareTraces(grouped, isDPS);
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
 
@@ -366,4 +414,44 @@ export function renderComparisonLineChart(
   };
 
   Plotly.newPlot(container, traces, layout, { responsive: true });
+}
+
+/**
+ * Expands an array of selected class names, replacing any paired/composite names
+ * with their constituent classes. For example, "White Mage+Sage" becomes ["White Mage", "Sage"].
+ * Non-paired names are included as-is.
+ *
+ * @param {Array<string>} classNames - The class names selected (may include paired/composite).
+ * @returns {Array<string>} Expanded list of class names for data filtering.
+ */
+function expandSelectedClasses(classNames) {
+  const expanded = new Set();
+  for (const name of classNames) {
+    const parts = parsePairedHealerClasses(name);
+    if (parts) {
+      parts.forEach((p) => expanded.add(p));
+    } else {
+      expanded.add(name);
+    }
+  }
+  return Array.from(expanded);
+}
+
+/**
+ * Merges two arrays of data objects and removes duplicates based on class/date/percentile.
+ * @param {Array<Object>} arr1
+ * @param {Array<Object>} arr2
+ * @returns {Array<Object>}
+ */
+function mergeAndDedup(arr1, arr2) {
+  const seen = new Set();
+  const result = [];
+  for (const row of [...arr1, ...arr2]) {
+    const key = `${row.class}|${row.date}|${row.percentile}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(row);
+    }
+  }
+  return result;
 }
