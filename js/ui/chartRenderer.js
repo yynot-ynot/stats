@@ -321,14 +321,16 @@ export function renderComparisonLineChart(
   referencePercentile,
   comparePercentiles
 ) {
-  // Find data for reference percentile and for each comparison percentile
+  // Expand classNames to include individual jobs for composites
+  const expandedClassNames = expandSelectedClasses(filters.classNames);
+
   // Structure: { class -> { date -> {p25, p50, p75, ...} } }
   const byClassDate = {};
   data.forEach((row) => {
     if (!filters.raid || row.raid === filters.raid) {
       if (!filters.boss || row.boss === filters.boss) {
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
-          if (filters.classNames.includes(row.class)) {
+          if (expandedClassNames.includes(row.class)) {
             if (!byClassDate[row.class]) byClassDate[row.class] = {};
             if (!byClassDate[row.class][row.date])
               byClassDate[row.class][row.date] = {};
