@@ -106,294 +106,6 @@ th {
   display: none;
 }
 
-
-
-/* ==========================================================================
-   FFXIV Percentile/Reference/Comparison Slider Styles
-   --------------------------------------------------------------------------
-   - This section styles the three main slider controls:
-     1. Main Percentile Slider
-     2. Reference Percentile Slider
-     3. Comparison Percentile Selector
-   - All are centered, full-width, and visually aligned
-   ========================================================================== */
-
-#percentile-slider-container,
-#reference-percentile-container,
-#comparison-slider-container {
-  width: 100%;
-  /* Make slider containers span full width of parent */
-  max-width: 800px;
-  /* (Optional) Set a sensible max width for desktop, adjust as needed */
-  margin: 1rem auto;
-  /* Center horizontally using auto margins */
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* Center the slider and label horizontally */
-  box-sizing: border-box;
-}
-
-#percentile-slider-container {
-  z-index: 101;
-}
-
-.percentile-slider-row,
-.comparison-slider-row {
-  width: 100%;
-  /* Full width of their container */
-  position: relative;
-  display: flex;
-  align-items: center;
-  height: 44px;
-}
-
-#percentile-slider,
-#reference-percentile-slider {
-  width: 100%;
-  margin: 0;
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 2;
-  background: transparent;
-  pointer-events: auto;
-  height: 44px;
-  cursor: pointer;
-  /* Hide the native track & thumb cross-browser */
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: transparent;
-  border: none;
-  outline: none;
-}
-
-/* Hide the native track - Webkit/Blink (Chrome, Safari, Edge) */
-#percentile-slider::-webkit-slider-runnable-track,
-#reference-percentile-slider::-webkit-slider-runnable-track {
-  background: transparent;
-  height: 44px;
-  border: none;
-  box-shadow: none;
-}
-
-/* Hide the native track - Firefox */
-#percentile-slider::-moz-range-track,
-#reference-percentile-slider::-moz-range-track {
-  background: transparent;
-  height: 44px;
-  border: none;
-  box-shadow: none;
-}
-
-/* Hide the native track - IE/Edge */
-#percentile-slider::-ms-fill-lower,
-#percentile-slider::-ms-fill-upper,
-#reference-percentile-slider::-ms-fill-lower,
-#reference-percentile-slider::-ms-fill-upper {
-  background: transparent;
-  border: none;
-}
-
-/* Hide the native thumb - cross-browser */
-#percentile-slider::-webkit-slider-thumb,
-#reference-percentile-slider::-webkit-slider-thumb {
-  opacity: 0;
-  pointer-events: none;
-  appearance: none;
-}
-
-#percentile-slider::-moz-range-thumb,
-#reference-percentile-slider::-moz-range-thumb {
-  opacity: 0;
-  pointer-events: none;
-  border: none;
-}
-
-#percentile-slider::-ms-thumb,
-#reference-percentile-slider::-ms-thumb {
-  opacity: 0;
-  pointer-events: none;
-  border: none;
-}
-
-#percentile-slider:focus,
-#reference-percentile-slider:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-/* Hide the native progress bar in Firefox */
-#percentile-slider::-moz-range-progress,
-#reference-percentile-slider::-moz-range-progress {
-  background: transparent;
-}
-
-/* Remove IE extra ticks */
-#percentile-slider::-ms-ticks-before,
-#percentile-slider::-ms-ticks-after,
-#reference-percentile-slider::-ms-ticks-before,
-#reference-percentile-slider::-ms-ticks-after {
-  display: none;
-}
-
-/* Remove the native range input background in IE */
-#percentile-slider::-ms-tooltip,
-#reference-percentile-slider::-ms-tooltip {
-  display: none;
-}
-
-#reference-percentile-container .slider-tick-label {
-  display: none !important;
-}
-
-.slider-tick-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 44px;
-  pointer-events: none;
-  z-index: 3;
-}
-
-/* Custom thumb overlay, positioned via JS */
-.slider-thumb-custom {
-  position: absolute;
-  /* Move the diamond up by half its height */
-  top: -20px;
-  /* half of 40px height, so it's nicely above the track */
-  left: 0;
-  width: 22px;
-  height: 40px;
-  /* SVG: no border, no box-shadow, just pure crystal */
-  background: url('data:image/svg+xml;utf8,<svg width="22" height="40" viewBox="0 0 22 40" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="11,0 22,16 11,40 0,16" fill="url(%23crystalGradient)"/><defs><linearGradient id="crystalGradient" x1="11" y1="0" x2="11" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="%23d8f7ff"/><stop offset="0.45" stop-color="%236bc8ff"/><stop offset="0.7" stop-color="%233897cb"/><stop offset="1" stop-color="%231166aa"/></linearGradient></defs></svg>') no-repeat center center / contain;
-  border: none;
-  box-shadow: none;
-  transform: translateX(-50%);
-  z-index: 102;
-  pointer-events: none;
-  transition: left 0.12s cubic-bezier(0.8, 0, 0.2, 1);
-}
-
-/* Glassy highlight, slim and vertical for a jewel shine */
-.slider-thumb-custom::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 6px;
-  width: 4px;
-  height: 18px;
-  background: linear-gradient(180deg, #fff9 40%, #fff2 70%, transparent 100%);
-  border-radius: 1.5px;
-  transform: rotate(-45deg);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.slider-tick {
-  position: absolute;
-  width: 2px;
-  height: 16px;
-  background: #444;
-  top: 4px;
-  transform: translateX(-1px);
-  z-index: 3;
-}
-
-.slider-tick.selected {
-  background: #ffcc00;
-  height: 20px;
-}
-
-.slider-tick-label {
-  position: absolute;
-  top: 32px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.85em;
-  color: #333;
-  font-weight: bold;
-  white-space: nowrap;
-  z-index: 4;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s;
-}
-
-.slider-tick-label.visible {
-  opacity: 1;
-}
-
-/* Hide the value display under slider as it's now redundant */
-.medieval-slider-selected-value {
-  display: none;
-}
-
-/* ==========================================================================
-   Comparison Percentile Value Selector (Single-Line Style)
-   --------------------------------------------------------------------------
-   - Single line of clickable values.
-   - Blue background and white text when selected, gray otherwise.
-   ========================================================================== */
-
-.comparison-label-row {
-  width: 100%;
-  position: relative;
-  height: 44px;
-}
-
-.comparison-value-label {
-  display: inline-block;
-  min-width: 2.2em;
-  /* slightly less wide for a more circular look */
-  height: 2.2em;
-  /* ensure consistent height for roundness */
-  line-height: 2.2em;
-  /* vertically center the text */
-  text-align: center;
-  font-size: 1.05em;
-  font-weight: 700;
-  color: #888;
-  background: none;
-  border-radius: 50%;
-  /* perfect circle (or close to it) */
-  padding: 0;
-  /* let min-width and height set the shape */
-  cursor: pointer;
-  transition: background 0.18s, color 0.18s;
-  user-select: none;
-  position: absolute;
-  /* Positioning left is set dynamically with JS for proportional spread */
-  top: 4px;
-}
-
-.comparison-value-label.selected {
-  color: #fff;
-  background: #60aaff;
-}
-
-#comparison-slider-container {
-  margin-top: -46px;
-  /* or -20px for more overlap, adjust to taste */
-  /* Optionally: set z-index higher if needed */
-  z-index: 2;
-}
-
-/* But labels inside should remain clickable */
-.comparison-label-row,
-.comparison-value-label {
-  pointer-events: auto;
-}
-
-#percentile-label,
-#reference-percentile-label {
-  display: block;
-  margin-bottom: 5rem;
-}
-
 /* ==========================================================================
    Class Sidebar: Grouped Icon Layout and Section Headers
    --------------------------------------------------------------------------
@@ -878,3 +590,280 @@ th {
   /* No individual margin needed */
   /* All other styles unchanged */
 }
+
+/* ==========================================================================
+   FFXIV Percentile/Reference/Comparison Slider Styles
+   --------------------------------------------------------------------------
+   - This section styles the three main slider controls:
+     1. Main Percentile Slider
+     2. Reference Percentile Slider
+     3. Comparison Percentile Selector
+   - All are centered, full-width, and visually aligned
+   ========================================================================== */
+
+/* ===============================
+   0. Unified Slider Label Styles
+   =============================== */
+#percentile-label,
+#reference-percentile-label,
+#comparison-label {
+  display: block;
+  font-weight: 600;
+  font-size: 1.06rem;
+  color: #253858;
+}
+
+#percentile-label,
+#reference-percentile-label {
+  margin-bottom: 2.25rem;
+  /* Unified spacing below main/reference labels */
+}
+
+#comparison-label {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ===============================
+      1. Slider Containers
+      =============================== */
+#percentile-slider-container,
+#reference-percentile-container,
+#comparison-slider-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 1rem auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+/* ===============================
+      2. Row Layout
+      =============================== */
+.percentile-slider-row,
+.comparison-slider-row {
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+}
+
+/* ===============================
+      3. Native Range Inputs
+      =============================== */
+#percentile-slider,
+#reference-percentile-slider {
+  width: 100%;
+  margin: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  background: transparent;
+  pointer-events: auto;
+  height: 44px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: none;
+  outline: none;
+}
+
+/* Hide native track (all browsers) */
+#percentile-slider::-webkit-slider-runnable-track,
+#reference-percentile-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 44px;
+  border: none;
+  box-shadow: none;
+}
+
+#percentile-slider::-moz-range-track,
+#reference-percentile-slider::-moz-range-track {
+  background: transparent;
+  height: 44px;
+  border: none;
+  box-shadow: none;
+}
+
+#percentile-slider::-ms-fill-lower,
+#percentile-slider::-ms-fill-upper,
+#reference-percentile-slider::-ms-fill-lower,
+#reference-percentile-slider::-ms-fill-upper {
+  background: transparent;
+  border: none;
+}
+
+/* Hide native thumb, keep drag support! */
+#percentile-slider::-webkit-slider-thumb,
+#reference-percentile-slider::-webkit-slider-thumb {
+  opacity: 0.001;
+  appearance: none;
+}
+
+#percentile-slider::-moz-range-thumb,
+#reference-percentile-slider::-moz-range-thumb {
+  opacity: 0.001;
+  border: none;
+}
+
+#percentile-slider::-ms-thumb,
+#reference-percentile-slider::-ms-thumb {
+  opacity: 0.001;
+  border: none;
+}
+
+/* Remove extras */
+#percentile-slider:focus,
+#reference-percentile-slider:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+#percentile-slider::-moz-range-progress,
+#reference-percentile-slider::-moz-range-progress {
+  background: transparent;
+}
+
+#percentile-slider::-ms-ticks-before,
+#percentile-slider::-ms-ticks-after,
+#reference-percentile-slider::-ms-ticks-before,
+#reference-percentile-slider::-ms-ticks-after {
+  display: none;
+}
+
+#percentile-slider::-ms-tooltip,
+#reference-percentile-slider::-ms-tooltip {
+  display: none;
+}
+
+/* ===============================
+      4. Tick Overlay and Thumb Overlay
+      =============================== */
+.slider-tick-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 44px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.slider-thumb-custom {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  width: 22px;
+  height: 40px;
+  background: url('data:image/svg+xml;utf8,<svg width="22" height="40" viewBox="0 0 22 40" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="11,0 22,16 11,40 0,16" fill="url(%23crystalGradient)"/><defs><linearGradient id="crystalGradient" x1="11" y1="0" x2="11" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="%23d8f7ff"/><stop offset="0.45" stop-color="%236bc8ff"/><stop offset="0.7" stop-color="%233897cb"/><stop offset="1" stop-color="%231166aa"/></linearGradient></defs></svg>') no-repeat center center / contain;
+  border: none;
+  box-shadow: none;
+  transform: translateX(-50%);
+  z-index: 102;
+  pointer-events: none;
+  transition: left 0.12s cubic-bezier(0.8, 0, 0.2, 1);
+}
+
+.slider-thumb-custom::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(180deg, #fff9 40%, #fff2 70%, transparent 100%);
+  border-radius: 1.5px;
+  transform: rotate(-45deg);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.slider-tick {
+  position: absolute;
+  width: 2px;
+  height: 16px;
+  background: #444;
+  top: 4px;
+  transform: translateX(-1px);
+  z-index: 3;
+}
+
+.slider-tick.selected {
+  background: #ffcc00;
+  height: 20px;
+}
+
+.slider-tick-label {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.85em;
+  color: #333;
+  font-weight: bold;
+  white-space: nowrap;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+
+.slider-tick-label.visible {
+  opacity: 1;
+}
+
+#reference-percentile-container .slider-tick-label {
+  display: none !important;
+}
+
+.medieval-slider-selected-value {
+  display: none;
+}
+
+/* ===============================
+      5. Comparison Percentile Value Selector
+      =============================== */
+.comparison-label-row {
+  width: 100%;
+  position: relative;
+  height: 44px;
+}
+
+.comparison-value-label {
+  display: inline-block;
+  min-width: 2.2em;
+  height: 2.2em;
+  line-height: 2.2em;
+  text-align: center;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: #888;
+  background: none;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  user-select: none;
+  position: absolute;
+  top: 4px;
+}
+
+.comparison-value-label.selected {
+  color: #fff;
+  background: #60aaff;
+}
+
+#comparison-slider-container {
+  margin-top: -46px;
+  z-index: 2;
+}
+
+.comparison-label-row,
+.comparison-value-label {
+  pointer-events: auto;  }

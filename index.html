@@ -5,8 +5,11 @@
   <meta charset="UTF-8" />
   <title>FFXIV DPS and Healing Trend</title>
   <link rel="stylesheet" href="css/style.css" />
+  <!-- pako for gzip support -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <!-- Plotly.js for plotting -->
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- Main app launcher (ES module) -->
   <script type="module" src="js/core/initLauncher.js"></script>
   <link rel="icon" href="assets/favicon.ico" />
 </head>
@@ -15,49 +18,72 @@
   <h1>FFXIV DPS and Healing Trend</h1>
 
   <div id="filters">
-    <!-- Raid Title and Custom Dropdown -->
+    <!-- ================================
+         Raid Title and Custom Dropdown
+         ================================ -->
     <div class="dropdown-section">
       <h2 id="raid-title" class="selectable-title">[Select Raid]</h2>
       <div id="raid-dropdown" class="custom-dropdown hidden-dropdown"></div>
     </div>
 
-    <!-- Boss Subheader and Custom Dropdown -->
+    <!-- ================================
+         Boss Subheader and Custom Dropdown
+         ================================ -->
     <div class="dropdown-section">
       <h3 id="boss-subheader" class="selectable-subheader">[Select Boss]</h3>
       <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
     </div>
 
-    <!-- Hidden backing <select> elements -->
+    <!-- Hidden native <select> for accessibility/fallback -->
     <select id="raid-select" style="display: none"></select>
     <select id="boss-select" style="display: none"></select>
 
-    <!-- Medieval Percentile Slider -->
+    <!-- ==========================================================================
+         FFXIV Percentile/Reference/Comparison Slider Styles
+         --------------------------------------------------------------------------
+         - This section contains the main percentile slider.
+         - Additional controls (reference & comparison) are rendered elsewhere.
+         - All sliders are styled via CSS (see style.css).
+         ========================================================================== -->
     <div id="percentile-slider-container">
-      <label id="percentile-label" style="display: block; margin-bottom: 0.5rem;">
-        Percentile:
-      </label>
+      <label id="percentile-label">Percentile:</label>
       <input id="percentile-slider" type="range" />
       <!-- Overlay for ticks and labels (generated dynamically) -->
       <div class="slider-tick-overlay"></div>
       <div class="medieval-slider-selected-value"></div>
     </div>
+    <!-- (End Percentile Slider) -->
 
   </div>
 
-  <!-- Plot Containers -->
+  <!-- ================================
+       Plot Containers (DPS/Healing)
+       ================================ -->
   <div id="dps-plot-container" style="margin-top: 2rem;"></div>
   <div id="healing-plot-container" style="margin-top: 2rem;"></div>
 
-  <!-- Comparison Percentile Filters (moved below plots) -->
+  <!-- ==========================================================================
+       Comparison Percentile Filters
+       --------------------------------------------------------------------------
+       (reference and comparison sliders rendered below main plots)
+       - The following containers are used for rendering reference and comparison
+         percentile sliders, which are styled and positioned by CSS and JS.
+       ========================================================================== -->
   <div id="reference-percentile-container" style="margin-top: 2rem;"></div>
   <div id="comparison-slider-container"></div>
 
+  <!-- ================================
+       Comparison Plots and Message
+       ================================ -->
   <div id="dps-comparison-plot-container" style="margin-top: 2rem;"></div>
   <div id="healing-comparison-plot-container" style="margin-top: 2rem;"></div>
   <div id="comparison-message" style="margin-top: 1rem; color: #d66; font-weight: bold;"></div>
 
+  <!-- ================================
+       Sidebar Header Bar (Right-top)
+       ================================ -->
   <div id="sidebar-header-bar">
-    <!-- ==== DPS Metric Selector (REPLACES sidebar-info-bar) ==== -->
+    <!-- ==== DPS Metric Selector ==== -->
     <div id="dps-type-label-container" tabindex="0" role="button" aria-label="Show/hide DPS metric sidebar">
       <div id="dps-metric-label">DPS Metric</div>
       <div id="dps-type-selected-label"></div>
@@ -65,14 +91,16 @@
       <select id="dps-type-select" style="display: none"></select>
     </div>
 
-    <!-- Persistent, clickable Classes label (acts as sidebar toggle) -->
+    <!-- ==== Classes Sidebar Toggle ==== -->
     <div id="sidebar-label-container" tabindex="0" role="button" aria-label="Show/hide class sidebar">
       <div id="sidebar-classes-label">Classes</div>
       <div id="sidebar-selected-icons"></div>
     </div>
   </div>
 
-  <!-- Class Selection Sidebar -->
+  <!-- ================================
+       Class Selection Sidebar
+       ================================ -->
   <div id="class-sidebar" class="collapsed">
     <h2>Classes</h2>
     <div id="class-icons-container">
