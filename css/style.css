@@ -702,7 +702,15 @@ th {
 /* Hide native thumb, keep drag support! */
 #percentile-slider::-webkit-slider-thumb,
 #reference-percentile-slider::-webkit-slider-thumb {
-  opacity: 0.001;
+  opacity: 0.01;
+  /* Must not be zero in Safari! */
+  background: rgba(0, 0, 0, 0.01);
+  /* Transparent, but still present */
+  width: 22px;
+  /* Match your custom overlay thumb width */
+  height: 40px;
+  /* Match your custom overlay thumb height */
+  border: none;
   appearance: none;
 }
 
