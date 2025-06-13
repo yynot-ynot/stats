@@ -554,6 +554,15 @@ function setupSidebarCollapseHandlers(
 
   // Track whether the mouse is currently over the sidebar
   let mouseOverSidebar = false;
+  let mouseX = 0,
+    mouseY = 0;
+
+  sidebar.addEventListener("mouseenter", () => {
+    mouseOverSidebar = true;
+  });
+  sidebar.addEventListener("mouseleave", () => {
+    mouseOverSidebar = false;
+  });
 
   sidebar.addEventListener("mouseenter", () => {
     mouseOverSidebar = true;
@@ -593,14 +602,19 @@ function setupSidebarCollapseHandlers(
   });
 
   // Collapse sidebar when the user scrolls anywhere, but only if the mouse is not over the sidebar
-  document.addEventListener(
+  window.addEventListener(
     "scroll",
-    function (event) {
+    function () {
+      const mouseElement = document.elementFromPoint(mouseX, mouseY);
+
       if (!isCollapsed() && !mouseOverSidebar) {
+        logger.info(
+          "[Sidebar] Collapsing sidebar due to window scroll and mouse not over sidebar."
+        );
         collapseSidebar();
       }
     },
-    true // Use capture so all scroll events bubble here
+    { capture: true, passive: true }
   );
 
   // Return helper functions for use in setupClassSidebar or elsewhere

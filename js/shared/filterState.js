@@ -35,9 +35,9 @@ export function updateFilterValue(key, value) {
     logger.warn(`Attempted to update unknown filter key: ${key}`);
     return;
   }
-  console.debug(`[filterState] Updating key: ${key}`, value);
+  logger.debug(`[filterState] Updating key: ${key}`, value);
   filterState[key] = value;
-  console.debug("[filterState] New state:", getCurrentFilterState());
+  logger.debug("[filterState] New state:", getCurrentFilterState());
   filterState.listeners.forEach((listener) =>
     listener(getCurrentFilterState())
   );

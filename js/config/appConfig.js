@@ -2,12 +2,12 @@ import { setModuleLogLevel } from "../shared/logging/logger.js";
 
 // Configure logging levels for individual modules
 setModuleLogLevel("main", "debug");
-setModuleLogLevel("filterState", "debug");
+setModuleLogLevel("filterState", "warn");
 setModuleLogLevel("fetchers", "warn");
 setModuleLogLevel("chartRenderer", "warn");
 setModuleLogLevel("dataDisplay", "warn");
 setModuleLogLevel("filterControls", "warn");
-setModuleLogLevel("dpsTypeSidebarManager", "debug");
+setModuleLogLevel("dpsTypeSidebarManager", "warn");
 setModuleLogLevel("classSidebarManager", "warn");
 
 // Path to the manifest file listing JSON assets
