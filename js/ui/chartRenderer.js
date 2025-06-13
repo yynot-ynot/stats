@@ -100,25 +100,9 @@ function groupDataByClass(filtered) {
     });
   });
 
-  // 1. Build full range of dates
-  const allDateArr = Array.from(allDates).sort(
-    (a, b) => parseCompactDate(a) - parseCompactDate(b)
-  );
-  const minDate = parseCompactDate(allDateArr[0]);
-  const maxDate = parseCompactDate(allDateArr[allDateArr.length - 1]);
-  let current = new Date(minDate);
-  const fullDates = [];
-  while (current <= maxDate) {
-    const y = current.getFullYear(),
-      m = current.getMonth() + 1,
-      d = current.getDate();
-    fullDates.push(
-      y.toString().padStart(4, "0") +
-        m.toString().padStart(2, "0") +
-        d.toString().padStart(2, "0")
-    );
-    current.setDate(current.getDate() + 1);
-  }
+  // 1. Build full range of dates using the helper
+  const allDateArr = Array.from(allDates);
+  const fullDates = getFullDateRange(allDateArr);
 
   // 2. Interpolate for each class (simple: carry last value forward)
   for (const key of Object.keys(grouped)) {
@@ -203,24 +187,23 @@ function prepareTraces(grouped, isDPS) {
       customdata: traceCustom,
       hovertemplate: isDPS
         ? `
-          Class: %{customdata[6]}<br>
+          Job: %{customdata[6]}<br>
           Parses: %{customdata[1]}<br>
           Percentile: %{customdata[2]}<br>
           DPS: %{customdata[5]} (%{customdata[3]})
           <extra></extra>
         `
         : `
-          Class: %{customdata[0]}<br>
+          Job: %{customdata[0]}<br>
           Parses: %{customdata[1]}<br>
           Percentile: %{customdata[2]}<br>
           HPS: %{customdata[4]}
           <extra></extra>
         `,
     };
-    if (CLASS_COLORS[key]) {
-      trace.line = { color: CLASS_COLORS[key] };
-      trace.marker = { color: CLASS_COLORS[key] };
-    }
+    const color = getClassColor(key);
+    trace.line = { color };
+    trace.marker = { color };
     return trace;
   });
 }
@@ -339,10 +322,7 @@ export function renderFilteredLineChart(
   const sortedDates = Array.from(allDates).sort(
     (a, b) => parseCompactDate(a) - parseCompactDate(b)
   );
-  const sortedDateLabels = sortedDates.map((d) => {
-    const dt = parseCompactDate(d);
-    return `${dt.getMonth() + 1}/${dt.getDate()}`;
-  });
+  const sortedDateLabels = getDateLabels(sortedDates);
 
   const traces = prepareTraces(grouped, isDPS);
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
@@ -351,26 +331,14 @@ export function renderFilteredLineChart(
   const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
   const ticktext = tickvals;
 
-  const layout = {
-    title: `Output Over Time${titleSuffix ? ` (${titleSuffix})` : ""}`,
-    xaxis: {
-      title: { text: "Date", standoff: 30 },
-      type: "category",
-      categoryorder: "array",
-      categoryarray: sortedDateLabels,
-      tickvals,
-      ticktext,
-    },
-    yaxis: {
-      title: titleSuffix || "Output",
-      fixedrange: true, // <--- disables zoom/pan in y
-    },
-    margin: { t: 60, l: 50, r: 30, b: 90 },
+  plotChartWithLayout(
+    traces,
+    container,
+    sortedDateLabels,
+    `Output Over Time${titleSuffix ? ` (${titleSuffix})` : ""}`,
     annotations,
-    showlegend: false,
-  };
-
-  Plotly.newPlot(container, traces, layout, { responsive: true });
+    titleSuffix || "Output"
+  );
 }
 
 /**
@@ -396,21 +364,25 @@ export function renderComparisonLineChart(
   referencePercentile,
   comparePercentiles
 ) {
-  // Expand classNames to include individual jobs for composites
-  const expandedClassNames = expandSelectedClasses(filters.classNames);
+  const isDPS = titleSuffix.toLowerCase().includes("dps");
+  const classNamesToUse = isDPS
+    ? filters.classNames
+    : expandSelectedClasses(filters.classNames);
 
   // Organize input into: { class -> { date -> { percentile -> value } } }
   const byClassDate = {};
+
   data.forEach((row) => {
     if (!filters.raid || row.raid === filters.raid) {
       if (!filters.boss || row.boss === filters.boss) {
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
-          if (expandedClassNames.includes(row.class)) {
+          if (classNamesToUse.includes(row.class)) {
             if (!byClassDate[row.class]) byClassDate[row.class] = {};
             if (!byClassDate[row.class][row.date])
               byClassDate[row.class][row.date] = {};
-            byClassDate[row.class][row.date][row.percentile] =
-              row.dps ?? row.hps;
+            byClassDate[row.class][row.date][row.percentile] = isDPS
+              ? getAdjustedValueForClass(row.class, row.dps ?? row.hps)
+              : row.dps ?? row.hps;
           }
         }
       }
@@ -418,26 +390,10 @@ export function renderComparisonLineChart(
   });
 
   // --- Build a complete date range (no missing dates) ---
-  // Find global min/max date
-  const allDatesRaw = Object.values(byClassDate)
-    .flatMap((obj) => Object.keys(obj))
-    .sort((a, b) => parseCompactDate(a) - parseCompactDate(b));
-  const minDate = parseCompactDate(allDatesRaw[0]);
-  const maxDate = parseCompactDate(allDatesRaw[allDatesRaw.length - 1]);
-  // Generate all dates in [minDate, maxDate] as 'YYYYMMDD'
-  const dateList = [];
-  let current = new Date(minDate);
-  while (current <= maxDate) {
-    const y = current.getFullYear(),
-      m = current.getMonth() + 1,
-      d = current.getDate();
-    dateList.push(
-      y.toString().padStart(4, "0") +
-        m.toString().padStart(2, "0") +
-        d.toString().padStart(2, "0")
-    );
-    current.setDate(current.getDate() + 1);
-  }
+  const allDatesRaw = Object.values(byClassDate).flatMap((obj) =>
+    Object.keys(obj)
+  );
+  const dateList = getFullDateRange(allDatesRaw);
 
   // --- Build traces for each class/percentile, filling missing dates by interpolation (carry-forward) ---
   const traces = [];
@@ -470,7 +426,7 @@ export function renderComparisonLineChart(
               ? Number((((cmpVal - refVal) / refVal) * 100).toFixed(2))
               : 0;
           custom.push([
-            className, // 0
+            getDisplayLabelForClass(className), // 0: Use display label here
             `${getOrdinal(referencePercentile)}`, // 1: Reference Percentile (with suffix)
             Math.round(refVal), // 2: Rounded reference value
             `${getOrdinal(cmp)}`, // 3: Comparison Percentile (with suffix)
@@ -495,9 +451,9 @@ export function renderComparisonLineChart(
       const trace = {
         type: "scatter",
         mode: "lines+markers",
-        name: `${className} (${getOrdinal(cmp)} vs ${getOrdinal(
-          referencePercentile
-        )})`,
+        name: `${getDisplayLabelForClass(className)} (${getOrdinal(
+          cmp
+        )} vs ${getOrdinal(referencePercentile)})`,
         x: xSorted.map((d) => {
           const dt = parseCompactDate(d);
           return `${dt.getMonth() + 1}/${dt.getDate()}`;
@@ -505,27 +461,23 @@ export function renderComparisonLineChart(
         y: ySorted,
         customdata: customSorted,
         hovertemplate:
-          `Job Class: %{customdata[0]}<br>` +
+          `Job : %{customdata[0]}<br>` +
           `Ref %: %{customdata[1]} (%{customdata[2]})<br>` +
           `Cmp %: %{customdata[3]} (%{customdata[4]})<br>` +
           `Diff: %{customdata[6]}% (%{customdata[5]})<br>` +
           `Date: %{customdata[7]}` +
           `<extra></extra>`,
       };
-      if (CLASS_COLORS[className]) {
-        trace.line = { color: CLASS_COLORS[className] };
-        trace.marker = { color: CLASS_COLORS[className] };
-      }
+      const color = getClassColor(className);
+      trace.line = { color };
+      trace.marker = { color };
       traces.push(trace);
     });
   }
 
   // --- X axis setup: use all dates in dateList, labels only every 7 days ---
   const sortedDates = dateList;
-  const sortedDateLabels = sortedDates.map((d) => {
-    const dt = parseCompactDate(d);
-    return `${dt.getMonth() + 1}/${dt.getDate()}`;
-  });
+  const sortedDateLabels = getDateLabels(sortedDates);
   // Show tick labels every 7 days (starting at the first date)
   const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
   const ticktext = tickvals;
@@ -533,23 +485,14 @@ export function renderComparisonLineChart(
   // Year annotation(s)
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
 
-  const layout = {
-    title: titleSuffix,
-    xaxis: {
-      title: { text: "Date", standoff: 30 },
-      type: "category",
-      categoryorder: "array",
-      categoryarray: sortedDateLabels,
-      tickvals,
-      ticktext,
-    },
-    yaxis: { title: "Difference" },
-    margin: { t: 60, l: 50, r: 30, b: 90 },
+  plotChartWithLayout(
+    traces,
+    container,
+    sortedDateLabels,
+    titleSuffix,
     annotations,
-    showlegend: false,
-  };
-
-  Plotly.newPlot(container, traces, layout, { responsive: true });
+    "Difference"
+  );
 }
 
 /**
@@ -590,4 +533,155 @@ function mergeAndDedup(arr1, arr2) {
     }
   }
   return result;
+}
+
+/**
+ * Builds a list of all dates in compact YYYYMMDD format from minDate to maxDate (inclusive).
+ * @param {string[]} compactDates - Array of compact date strings ('YYYYMMDD')
+ * @returns {string[]} Array of all dates in compact format, sorted.
+ */
+function getFullDateRange(compactDates) {
+  if (!compactDates.length) return [];
+  const sorted = compactDates
+    .slice()
+    .sort((a, b) => parseCompactDate(a) - parseCompactDate(b));
+  const minDate = parseCompactDate(sorted[0]);
+  const maxDate = parseCompactDate(sorted[sorted.length - 1]);
+  let current = new Date(minDate);
+  const dateList = [];
+  while (current <= maxDate) {
+    const y = current.getFullYear(),
+      m = current.getMonth() + 1,
+      d = current.getDate();
+    dateList.push(
+      y.toString().padStart(4, "0") +
+        m.toString().padStart(2, "0") +
+        d.toString().padStart(2, "0")
+    );
+    current.setDate(current.getDate() + 1);
+  }
+  return dateList;
+}
+
+/**
+ * Converts a list of compact date strings to M/D formatted labels.
+ * @param {string[]} compactDates
+ * @returns {string[]} Array of "M/D" labels
+ */
+function getDateLabels(compactDates) {
+  return compactDates.map((d) => {
+    const dt = parseCompactDate(d);
+    return `${dt.getMonth() + 1}/${dt.getDate()}`;
+  });
+}
+
+/**
+ * Plots the given traces in a container with shared layout logic.
+ * @param {Array<Object>} traces - Plotly traces.
+ * @param {HTMLElement} container - Plotly render target.
+ * @param {Array<string>} sortedDateLabels - X axis categories ("M/D" format).
+ * @param {string} title - Chart title.
+ * @param {Array<Object>} annotations - Plotly annotation objects.
+ * @param {string} yAxisTitle - Y axis title.
+ * @param {boolean} [fixedRange=true] - Lock y axis zoom.
+ */
+function plotChartWithLayout(
+  traces,
+  container,
+  sortedDateLabels,
+  title,
+  annotations,
+  yAxisTitle,
+  fixedRange = true
+) {
+  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
+  // Add (wkN) starting at 1 for each 7-day label
+  const ticktext = sortedDateLabels
+    .map((label, i) =>
+      i % 7 === 0 ? `${label} (wk${Math.floor(i / 7) + 1})` : null
+    )
+    .filter((v) => v !== null);
+
+  const layout = {
+    title,
+    xaxis: {
+      title: { text: "Date", standoff: 30 },
+      type: "category",
+      categoryorder: "array",
+      categoryarray: sortedDateLabels,
+      tickvals,
+      ticktext,
+    },
+    yaxis: {
+      title: yAxisTitle,
+      fixedrange: fixedRange,
+    },
+    margin: { t: 60, l: 50, r: 30, b: 90 },
+    annotations,
+    showlegend: false,
+  };
+  Plotly.newPlot(container, traces, layout, { responsive: true });
+}
+
+/**
+ * Blends two hex colors equally (50/50 mix).
+ * @param {string} colorA - First color in hex, e.g. "#AABBCC"
+ * @param {string} colorB - Second color in hex, e.g. "#112233"
+ * @returns {string} Blended color in hex.
+ */
+function blendHexColors(colorA, colorB) {
+  // Remove # if present
+  colorA = colorA.replace("#", "");
+  colorB = colorB.replace("#", "");
+  // Convert to RGB
+  const rgbA = [
+    parseInt(colorA.substring(0, 2), 16),
+    parseInt(colorA.substring(2, 4), 16),
+    parseInt(colorA.substring(4, 6), 16),
+  ];
+  const rgbB = [
+    parseInt(colorB.substring(0, 2), 16),
+    parseInt(colorB.substring(2, 4), 16),
+    parseInt(colorB.substring(4, 6), 16),
+  ];
+  // Blend 50/50
+  const blended = rgbA.map((a, i) => Math.round((a + rgbB[i]) / 2));
+  // Convert back to hex
+  return (
+    "#" +
+    blended
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase()
+  );
+}
+
+/**
+ * Returns the color for a given class or paired class.
+ * 1) Try CLASS_COLORS.
+ * 2) If not found, expand class name and blend their colors if both found.
+ * 3) Else, generate a random color.
+ * @param {string} className
+ * @returns {string} Hex color.
+ */
+function getClassColor(className) {
+  if (CLASS_COLORS[className]) {
+    return CLASS_COLORS[className];
+  }
+  // Try expanding paired healers and blending
+  const parts = parsePairedHealerClasses(className);
+  if (parts && parts.length === 2) {
+    const colorA = CLASS_COLORS[parts[0]];
+    const colorB = CLASS_COLORS[parts[1]];
+    if (colorA && colorB) {
+      return blendHexColors(colorA, colorB);
+    }
+  }
+  // Fallback to random pastel color (as before)
+  const randColor =
+    "#" +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, "0");
+  return randColor;
 }
