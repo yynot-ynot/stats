@@ -617,6 +617,49 @@ function setupSidebarCollapseHandlers(
     { capture: true, passive: true }
   );
 
+  // --- Touch scroll elsewhere collapse for mobile devices ---
+
+  let touchScrollStartedInsideSidebar = false;
+  let touchStarted = false;
+
+  sidebar.addEventListener(
+    "touchstart",
+    function (e) {
+      touchScrollStartedInsideSidebar = true;
+      touchStarted = true;
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchstart",
+    function (e) {
+      // Only update if touch is outside sidebar
+      if (!sidebar.contains(e.target)) {
+        touchScrollStartedInsideSidebar = false;
+        touchStarted = true;
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    function (e) {
+      // Only handle the first touchmove after a touchstart
+      if (!touchStarted) return;
+      touchStarted = false;
+
+      if (!isCollapsed() && !touchScrollStartedInsideSidebar) {
+        logger.info(
+          "[Sidebar] Collapsing sidebar due to touch scroll outside sidebar."
+        );
+        collapseSidebar();
+      }
+    },
+    { passive: true }
+  );
+
   // Return helper functions for use in setupClassSidebar or elsewhere
   return { collapseSidebar, expandSidebar, toggleSidebar, isCollapsed };
 }
