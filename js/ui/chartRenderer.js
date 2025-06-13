@@ -1,4 +1,5 @@
 import { parsePairedHealerClasses } from "./classSidebarManager.js";
+import { CLASS_COLORS } from "../config/appConfig.js";
 import {
   getDisplayLabelForClass,
   getAdjustedValueForClass,
@@ -143,7 +144,7 @@ function prepareTraces(grouped, isDPS) {
       );
     });
 
-    return {
+    const trace = {
       type: "scatter",
       mode: "lines+markers",
       name: getDisplayLabelForClass(key),
@@ -166,14 +167,19 @@ function prepareTraces(grouped, isDPS) {
           <extra></extra>
         `,
     };
+    if (CLASS_COLORS[key]) {
+      trace.line = { color: CLASS_COLORS[key] };
+      trace.marker = { color: CLASS_COLORS[key] };
+    }
+    return trace;
   });
 }
 
 /**
  * Generate year annotation positions for the chart.
- * For single-year data, the year is centered under the full axis to align with the "Date" label.
- * For multi-year data, the first year is centered under its date range, and each subsequent year
- * is positioned under the first occurrence of its date.
+ * For single-year data, the year is centered under the full axis, close to the "Date" axis label.
+ * For multi-year data, each year label is positioned below its date range or first occurrence,
+ * but shifted down so as NOT to overlap tick labels—appearing just beneath the axis label.
  *
  * @param {Array<string>} sortedDates - Chronologically sorted compact date strings (e.g., "20250401").
  * @param {Array<string>} sortedDateLabels - Corresponding "M/D" formatted labels (e.g., "4/1").
@@ -193,14 +199,18 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
 
   const totalYears = Object.keys(yearToIndices).length;
 
+  // Set y position lower, so the annotation appears below axis tick labels, but closer to the "Date" axis label.
+  // Experimentally, -0.21 aligns better with axis labels without overlapping tick labels.
+  const yearAnnotationY = -0.21;
+
   if (totalYears === 1) {
-    // Single-year: align the year label to the center of the full axis (aligned with "Date" title)
+    // Single-year: align the year label to the center of the full axis, close to the "Date" axis label
     return [
       {
         xref: "paper",
         yref: "paper",
         x: 0.5,
-        y: -0.15,
+        y: yearAnnotationY,
         text: `<b>${Object.keys(yearToIndices)[0]}</b>`,
         showarrow: false,
         font: { size: 14 },
@@ -208,7 +218,7 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
     ];
   }
 
-  // Multi-year: place each year label below its date range or first occurrence
+  // Multi-year: place each year label below its date range or first occurrence, close to axis label
   return Object.entries(yearToIndices).map(([year, indices], idx) => {
     let posIndex;
     if (idx === 0) {
@@ -224,7 +234,7 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
       xref: "x",
       yref: "paper",
       x: sortedDateLabels[posIndex],
-      y: -0.15,
+      y: yearAnnotationY,
       text: `<b>${year}</b>`,
       showarrow: false,
       font: { size: 14 },
@@ -298,6 +308,7 @@ export function renderFilteredLineChart(
     yaxis: { title: titleSuffix || "Output" },
     margin: { t: 60, l: 50, r: 30, b: 90 },
     annotations,
+    showlegend: false,
   };
 
   Plotly.newPlot(container, traces, layout, { responsive: true });
@@ -385,7 +396,7 @@ export function renderComparisonLineChart(
       const ySorted = sortedIndices.map((i) => y[i]);
       const customSorted = sortedIndices.map((i) => custom[i]);
 
-      traces.push({
+      const trace = {
         type: "scatter",
         mode: "lines+markers",
         name: `${className} (${getOrdinal(cmp)} vs ${getOrdinal(
@@ -404,15 +415,40 @@ export function renderComparisonLineChart(
           `Diff: %{customdata[6]}% (%{customdata[5]})<br>` +
           `Date: %{customdata[7]}` +
           `<extra></extra>`,
-      });
+      };
+      if (CLASS_COLORS[className]) {
+        trace.line = { color: CLASS_COLORS[className] };
+        trace.marker = { color: CLASS_COLORS[className] };
+      }
+      traces.push(trace);
     });
   }
+
+  // Get a sorted list of all unique dates used for the x-axis
+  const allDatesSet = new Set();
+  for (const className in byClassDate) {
+    for (const date in byClassDate[className]) {
+      allDatesSet.add(date);
+    }
+  }
+  const sortedDates = Array.from(allDatesSet).sort(
+    (a, b) => parseCompactDate(a) - parseCompactDate(b)
+  );
+  const sortedDateLabels = sortedDates.map((d) => {
+    const dt = parseCompactDate(d);
+    return `${dt.getMonth() + 1}/${dt.getDate()}`;
+  });
+
+  // Generate year annotation(s), align y value so label appears close to "Date" axis label (not overlapping tick labels)
+  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
 
   const layout = {
     title: titleSuffix,
     xaxis: { title: { text: "Date", standoff: 30 }, type: "category" },
     yaxis: { title: "Difference" },
     margin: { t: 60, l: 50, r: 30, b: 90 },
+    annotations,
+    showlegend: false,
   };
 
   Plotly.newPlot(container, traces, layout, { responsive: true });

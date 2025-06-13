@@ -102,3 +102,28 @@ export const CLASS_GROUPS = {
   "Physical Ranged DPS": ["Bard", "Machinist", "Dancer"],
   "Magical Ranged DPS": ["Black Mage", "Summoner", "Red Mage", "Pictomancer"],
 };
+
+// Default colors per class (for DPS scatter plots and other visualizations)
+export const CLASS_COLORS = {
+  Pictomancer: "#fc92e1", // #fc92e1  light pastel pink
+  Dragoon: "#4164CD", // #4164CD  royal blue
+  "Black Mage": "#A579D6", // #A579D6  soft lavender purple
+  Reaper: "#965A90", // #965A90  dusty mauve
+  Ninja: "#AF1964", // #AF1964  deep magenta
+  Viper: "#108210", // #108210  forest green
+  Monk: "#d69c00", // #d69c00  golden yellow
+  Samurai: "#e46d04", // #e46d04  vibrant orange
+  "Red Mage": "#e87b7b", // #e87b7b  salmon pink
+  Bard: "#91BA5E", // #91BA5E  olive green
+  Summoner: "#2D9B78", // #2D9B78  teal green
+  Machinist: "#6EE1D6", // #6EE1D6  bright mint/aqua
+  Dancer: "#E2B0AF", // #E2B0AF  pale rose
+  Gunbreaker: "#796D30", // #796D30  olive brown
+  Paladin: "#A8D2E6", // #A8D2E6  sky blue
+  "Dark Knight": "#D126CC", // #D126CC  vivid magenta
+  Warrior: "#cf2621", // #cf2621  bright red
+  Astrologian: "#FFE74A", // #FFE74A  bright yellow
+  Scholar: "#8657FF", // #8657FF  vivid violet
+  "White Mage": "#E6D2B5", // #E6D2B5  creamy tan
+  Sage: "#80A0F0", // #80A0F0  soft blue
+};

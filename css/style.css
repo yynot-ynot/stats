@@ -106,6 +106,22 @@ th {
   display: none;
 }
 
+/* === Plot and Comparison Containers === */
+#dps-plot-container,
+#healing-plot-container,
+#dps-comparison-plot-container,
+#healing-comparison-plot-container,
+#reference-percentile-container {
+  margin-top: 2rem;
+}
+
+/* Comparison message styling */
+#comparison-message {
+  margin-top: 1rem;
+  color: #d66;
+  font-weight: bold;
+}
+
 /* ==========================================================================
    Class Sidebar: Grouped Icon Layout and Section Headers
    --------------------------------------------------------------------------
@@ -253,6 +269,16 @@ th {
   object-fit: contain;
   display: block;
   background: none;
+}
+
+.mini-class-color-line {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+  width: 42px;
+  height: 4px;
+  border-radius: 2px;
+  /* No background here; set in JS per class */
 }
 
 /* ==========================================================================

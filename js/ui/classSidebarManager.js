@@ -4,7 +4,11 @@ import {
   updateSidebarLabelVisibility,
 } from "../shared/filterState.js";
 import { getLogger } from "../shared/logging/logger.js";
-import { CLASS_ICONS, CLASS_GROUPS } from "../config/appConfig.js";
+import {
+  CLASS_ICONS,
+  CLASS_GROUPS,
+  CLASS_COLORS,
+} from "../config/appConfig.js";
 
 const logger = getLogger("classSidebarManager");
 
@@ -399,7 +403,21 @@ export function setupClassSidebar(classList) {
         }
         iconDiv.title = className;
       }
-      selectedIconsDiv.appendChild(iconDiv);
+      // === Add class color line after the icon ===
+      const colorLine = createClassColorLine(className);
+
+      // --- NEW: Wrap icon and line in a container ---
+      const iconLineContainer = document.createElement("div");
+      iconLineContainer.classList.add("mini-icon-line-container");
+      iconLineContainer.style.display = "flex";
+      iconLineContainer.style.alignItems = "center";
+
+      // Move iconDiv and colorLine into the new container
+      iconLineContainer.appendChild(iconDiv);
+      if (colorLine) iconLineContainer.appendChild(colorLine);
+
+      // Now append the container, not the iconDiv, to selectedIconsDiv:
+      selectedIconsDiv.appendChild(iconLineContainer);
     });
   }
 
@@ -457,4 +475,52 @@ export function setupClassSidebar(classList) {
     );
     updateSidebarLabelVisibility(); // Always sync label visibility with sidebar state
   });
+}
+
+/**
+ * Create a colored line (div) that visually indicates a class's color.
+ * - For regular classes with a defined color, returns a single colored line.
+ * - For paired/composite classes (e.g., "White Mage+Sage") with colors for either/both components,
+ *   returns two stacked lines (one per matching component, vertically separated).
+ * - If neither the class nor its paired components have a color, returns null.
+ *
+ * @param {string} className - The class name or paired class string.
+ * @returns {HTMLElement|null} The colored line element(s), or null if no color found.
+ */
+function createClassColorLine(className) {
+  const color = CLASS_COLORS[className];
+  if (color) {
+    // Single color line (normal class)
+    const line = document.createElement("div");
+    line.classList.add("mini-class-color-line");
+    line.style.background = color;
+    return line;
+  }
+
+  // Try to split as a paired class and get colors for both
+  const paired = parsePairedHealerClasses(className);
+  if (paired) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px"; // spacing between lines
+
+    paired.forEach((p) => {
+      const c = CLASS_COLORS[p];
+      if (c) {
+        const line = document.createElement("div");
+        line.classList.add("mini-class-color-line");
+        line.style.background = c;
+        wrapper.appendChild(line);
+      }
+    });
+
+    // If at least one line added, return wrapper
+    if (wrapper.children.length > 0) {
+      return wrapper;
+    }
+  }
+
+  // No color found, no match
+  return null;
 }

@@ -40,10 +40,6 @@
 
     <!-- ==========================================================================
          FFXIV Percentile/Reference/Comparison Slider Styles
-         --------------------------------------------------------------------------
-         - This section contains the main percentile slider.
-         - Additional controls (reference & comparison) are rendered elsewhere.
-         - All sliders are styled via CSS (see style.css).
          ========================================================================== -->
     <div id="percentile-slider-container">
       <label id="percentile-label">Percentile:</label>
@@ -53,31 +49,26 @@
       <div class="medieval-slider-selected-value"></div>
     </div>
     <!-- (End Percentile Slider) -->
-
   </div>
 
   <!-- ================================
        Plot Containers (DPS/Healing)
        ================================ -->
-  <div id="dps-plot-container" style="margin-top: 2rem;"></div>
-  <div id="healing-plot-container" style="margin-top: 2rem;"></div>
+  <div id="dps-plot-container"></div>
+  <div id="healing-plot-container"></div>
 
   <!-- ==========================================================================
        Comparison Percentile Filters
-       --------------------------------------------------------------------------
-       (reference and comparison sliders rendered below main plots)
-       - The following containers are used for rendering reference and comparison
-         percentile sliders, which are styled and positioned by CSS and JS.
        ========================================================================== -->
-  <div id="reference-percentile-container" style="margin-top: 2rem;"></div>
+  <div id="reference-percentile-container"></div>
   <div id="comparison-slider-container"></div>
 
   <!-- ================================
        Comparison Plots and Message
        ================================ -->
-  <div id="dps-comparison-plot-container" style="margin-top: 2rem;"></div>
-  <div id="healing-comparison-plot-container" style="margin-top: 2rem;"></div>
-  <div id="comparison-message" style="margin-top: 1rem; color: #d66; font-weight: bold;"></div>
+  <div id="dps-comparison-plot-container"></div>
+  <div id="healing-comparison-plot-container"></div>
+  <div id="comparison-message"></div>
 
   <!-- ================================
        Sidebar Header Bar (Right-top)
