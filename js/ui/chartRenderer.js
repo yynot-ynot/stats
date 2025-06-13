@@ -361,7 +361,10 @@ export function renderFilteredLineChart(
       tickvals,
       ticktext,
     },
-    yaxis: { title: titleSuffix || "Output" },
+    yaxis: {
+      title: titleSuffix || "Output",
+      fixedrange: true, // <--- disables zoom/pan in y
+    },
     margin: { t: 60, l: 50, r: 30, b: 90 },
     annotations,
     showlegend: false,
