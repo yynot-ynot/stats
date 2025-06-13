@@ -302,7 +302,7 @@ function createPairedHealerIconElement(
 export function setupClassSidebar(classList) {
   const container = document.getElementById("class-icons-container");
   if (!container) {
-    console.warn("Class icons container not found; skipping sidebar setup.");
+    logger.warn("Class icons container not found; skipping sidebar setup.");
     return;
   }
 

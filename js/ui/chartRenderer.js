@@ -100,7 +100,57 @@ function groupDataByClass(filtered) {
     });
   });
 
-  return { grouped, allDates };
+  // 1. Build full range of dates
+  const allDateArr = Array.from(allDates).sort(
+    (a, b) => parseCompactDate(a) - parseCompactDate(b)
+  );
+  const minDate = parseCompactDate(allDateArr[0]);
+  const maxDate = parseCompactDate(allDateArr[allDateArr.length - 1]);
+  let current = new Date(minDate);
+  const fullDates = [];
+  while (current <= maxDate) {
+    const y = current.getFullYear(),
+      m = current.getMonth() + 1,
+      d = current.getDate();
+    fullDates.push(
+      y.toString().padStart(4, "0") +
+        m.toString().padStart(2, "0") +
+        d.toString().padStart(2, "0")
+    );
+    current.setDate(current.getDate() + 1);
+  }
+
+  // 2. Interpolate for each class (simple: carry last value forward)
+  for (const key of Object.keys(grouped)) {
+    const dataByDate = {};
+    grouped[key].forEach((point) => (dataByDate[point.rawDate] = point));
+    let lastY = null;
+    let lastYear = null;
+    grouped[key] = fullDates.map((date) => {
+      if (dataByDate[date]) {
+        lastY = dataByDate[date].y;
+        lastYear = dataByDate[date].year;
+        return dataByDate[date];
+      } else {
+        // You can interpolate here instead of carrying forward if you want
+        return {
+          x: `${parseInt(date.slice(4, 6))}/${parseInt(date.slice(6, 8))}`,
+          year: lastYear,
+          y: lastY, // or use null if you want gaps
+          rawDate: date,
+          customdata: {
+            class: key,
+            percentile: null,
+            parses: null,
+            dps_type: null,
+          },
+        };
+      }
+    });
+  }
+
+  // Replace allDates with fullDates for axis
+  return { grouped, allDates: new Set(fullDates) };
 }
 
 /**
@@ -200,8 +250,8 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
   const totalYears = Object.keys(yearToIndices).length;
 
   // Set y position lower, so the annotation appears below axis tick labels, but closer to the "Date" axis label.
-  // Experimentally, -0.21 aligns better with axis labels without overlapping tick labels.
-  const yearAnnotationY = -0.21;
+  // Experimentally, -0.15 aligns better with axis labels without overlapping tick labels.
+  const yearAnnotationY = -0.15;
 
   if (totalYears === 1) {
     // Single-year: align the year label to the center of the full axis, close to the "Date" axis label
@@ -297,6 +347,10 @@ export function renderFilteredLineChart(
   const traces = prepareTraces(grouped, isDPS);
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
 
+  // Find x labels to show every 7 days, starting from first
+  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
+  const ticktext = tickvals;
+
   const layout = {
     title: `Output Over Time${titleSuffix ? ` (${titleSuffix})` : ""}`,
     xaxis: {
@@ -304,6 +358,8 @@ export function renderFilteredLineChart(
       type: "category",
       categoryorder: "array",
       categoryarray: sortedDateLabels,
+      tickvals,
+      ticktext,
     },
     yaxis: { title: titleSuffix || "Output" },
     margin: { t: 60, l: 50, r: 30, b: 90 },
@@ -315,9 +371,14 @@ export function renderFilteredLineChart(
 }
 
 /**
- * Render a line chart showing the difference between selected comparison percentiles and a reference percentile.
+ * Render a line chart showing the difference between selected comparison percentiles and a reference percentile,
+ * with the following features:
+ *   1. X-axis always covers the complete date range (no gaps even if some dates missing from input).
+ *   2. For missing dates in a class/percentile time series, uses the most recent previous value for interpolation (carry-forward).
+ *   3. X-axis tick labels show only every 7 days, starting from the first date.
+ *   4. Year annotation is placed below the axis.
  *
- * @param {Array<Object>} data - Full dataset.
+ * @param {Array<Object>} data - Full dataset, each row should have {raid, boss, date, class, percentile, dps|hps, dps_type}.
  * @param {Object} filters - Filter criteria except percentile.
  * @param {HTMLElement} container - DOM element for the chart.
  * @param {string} titleSuffix - Chart title (e.g., "DPS Comparison").
@@ -335,7 +396,7 @@ export function renderComparisonLineChart(
   // Expand classNames to include individual jobs for composites
   const expandedClassNames = expandSelectedClasses(filters.classNames);
 
-  // Structure: { class -> { date -> {p25, p50, p75, ...} } }
+  // Organize input into: { class -> { date -> { percentile -> value } } }
   const byClassDate = {};
   data.forEach((row) => {
     if (!filters.raid || row.raid === filters.raid) {
@@ -353,18 +414,50 @@ export function renderComparisonLineChart(
     }
   });
 
-  // Only show dates that have all required percentiles
+  // --- Build a complete date range (no missing dates) ---
+  // Find global min/max date
+  const allDatesRaw = Object.values(byClassDate)
+    .flatMap((obj) => Object.keys(obj))
+    .sort((a, b) => parseCompactDate(a) - parseCompactDate(b));
+  const minDate = parseCompactDate(allDatesRaw[0]);
+  const maxDate = parseCompactDate(allDatesRaw[allDatesRaw.length - 1]);
+  // Generate all dates in [minDate, maxDate] as 'YYYYMMDD'
+  const dateList = [];
+  let current = new Date(minDate);
+  while (current <= maxDate) {
+    const y = current.getFullYear(),
+      m = current.getMonth() + 1,
+      d = current.getDate();
+    dateList.push(
+      y.toString().padStart(4, "0") +
+        m.toString().padStart(2, "0") +
+        d.toString().padStart(2, "0")
+    );
+    current.setDate(current.getDate() + 1);
+  }
+
+  // --- Build traces for each class/percentile, filling missing dates by interpolation (carry-forward) ---
   const traces = [];
   for (const className in byClassDate) {
     comparePercentiles.forEach((cmp) => {
       const x = [];
       const y = [];
       const custom = [];
+      let lastRefVal = null;
+      let lastCmpVal = null;
 
-      // Get all available dates where both ref and cmp exist
-      for (const date in byClassDate[className]) {
-        const refVal = byClassDate[className][date][referencePercentile];
-        const cmpVal = byClassDate[className][date][cmp];
+      for (const date of dateList) {
+        const pObj = byClassDate[className][date] || {};
+        // Carry forward last known value for missing data points
+        const refVal =
+          pObj[referencePercentile] !== undefined
+            ? pObj[referencePercentile]
+            : lastRefVal;
+        const cmpVal = pObj[cmp] !== undefined ? pObj[cmp] : lastCmpVal;
+        // Update last known values if defined
+        if (refVal !== undefined) lastRefVal = refVal;
+        if (cmpVal !== undefined) lastCmpVal = cmpVal;
+        // Only plot points after first known (skip leading missing)
         if (refVal !== undefined && cmpVal !== undefined) {
           x.push(date);
           // Calculate diff and percent diff, both rounded to two decimals
@@ -387,7 +480,7 @@ export function renderComparisonLineChart(
         }
       }
 
-      // Sort by date
+      // Sort by date (should already be sorted, but keep for robustness)
       const dateObjs = x.map(parseCompactDate);
       const sortedIndices = [...x.keys()].sort(
         (a, b) => dateObjs[a] - dateObjs[b]
@@ -424,27 +517,29 @@ export function renderComparisonLineChart(
     });
   }
 
-  // Get a sorted list of all unique dates used for the x-axis
-  const allDatesSet = new Set();
-  for (const className in byClassDate) {
-    for (const date in byClassDate[className]) {
-      allDatesSet.add(date);
-    }
-  }
-  const sortedDates = Array.from(allDatesSet).sort(
-    (a, b) => parseCompactDate(a) - parseCompactDate(b)
-  );
+  // --- X axis setup: use all dates in dateList, labels only every 7 days ---
+  const sortedDates = dateList;
   const sortedDateLabels = sortedDates.map((d) => {
     const dt = parseCompactDate(d);
     return `${dt.getMonth() + 1}/${dt.getDate()}`;
   });
+  // Show tick labels every 7 days (starting at the first date)
+  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
+  const ticktext = tickvals;
 
-  // Generate year annotation(s), align y value so label appears close to "Date" axis label (not overlapping tick labels)
+  // Year annotation(s)
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
 
   const layout = {
     title: titleSuffix,
-    xaxis: { title: { text: "Date", standoff: 30 }, type: "category" },
+    xaxis: {
+      title: { text: "Date", standoff: 30 },
+      type: "category",
+      categoryorder: "array",
+      categoryarray: sortedDateLabels,
+      tickvals,
+      ticktext,
+    },
     yaxis: { title: "Difference" },
     margin: { t: 60, l: 50, r: 30, b: 90 },
     annotations,
