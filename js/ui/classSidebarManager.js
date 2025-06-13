@@ -295,6 +295,8 @@ function createPairedHealerIconElement(
  * Also handles the persistent "Classes" label with a vertical mini-icon list
  * that is visible only when the sidebar is collapsed.
  * Any classes in classList not found in the predefined groups will appear in an "Other" section at the bottom.
+ * Sidebar expand/collapse logic is centralized for maintainability.
+ *
  * @param {Array<string>} classList - List of class names (all available).
  */
 export function setupClassSidebar(classList) {
@@ -310,7 +312,7 @@ export function setupClassSidebar(classList) {
   // Track which class names are already displayed, so we can find "leftover" classes later
   const displayedClassNames = new Set();
 
-  // --- Grouped Section/Row Layout (Recommended) ---
+  // --- Grouped Section/Row Layout ---
   const groupOrder = [
     "Tank",
     "Healer",
@@ -352,12 +354,12 @@ export function setupClassSidebar(classList) {
   }
 
   const sidebar = document.getElementById("class-sidebar");
-  // Use the new persistent label container
   const labelContainer = document.getElementById("sidebar-label-container");
   const selectedIconsDiv = document.getElementById("sidebar-selected-icons");
 
   /**
-   * Helper: Render mini selected icons vertically under the label
+   * Helper: Render mini selected icons vertically under the label.
+   * Each selected class (including pairs) is shown with its icon and color line.
    * @param {Array<string>} selectedClassNames
    */
   function updateSelectedMiniIcons(selectedClassNames) {
@@ -403,63 +405,42 @@ export function setupClassSidebar(classList) {
         }
         iconDiv.title = className;
       }
-      // === Add class color line after the icon ===
+      // Add class color line after the icon
       const colorLine = createClassColorLine(className);
 
-      // --- NEW: Wrap icon and line in a container ---
+      // Wrap icon and line in a container for correct alignment
       const iconLineContainer = document.createElement("div");
       iconLineContainer.classList.add("mini-icon-line-container");
       iconLineContainer.style.display = "flex";
       iconLineContainer.style.alignItems = "center";
 
-      // Move iconDiv and colorLine into the new container
       iconLineContainer.appendChild(iconDiv);
       if (colorLine) iconLineContainer.appendChild(colorLine);
 
-      // Now append the container, not the iconDiv, to selectedIconsDiv:
       selectedIconsDiv.appendChild(iconLineContainer);
     });
   }
 
-  // Sidebar toggle handler using the whole label container (label + mini icons)
+  // === Centralized collapse/expand logic ===
+  let collapseHelpers;
   if (sidebar && labelContainer) {
-    labelContainer.addEventListener("click", (e) => {
-      e.stopPropagation(); // Prevent triggering the document click handler
-      sidebar.classList.toggle("collapsed");
-      updateSidebarLabelVisibility();
-    });
-
-    // Accessibility: allow keyboard "Enter"/"Space" to toggle
-    labelContainer.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        sidebar.classList.toggle("collapsed");
-        updateSidebarLabelVisibility();
-      }
-    });
-
-    // Collapse sidebar when clicking anywhere outside the sidebar or the label container
-    document.addEventListener("click", function (event) {
-      if (
-        !sidebar.classList.contains("collapsed") && // Only collapse if open
-        !sidebar.contains(event.target) && // Not a click inside sidebar
-        event.target !== labelContainer // Not a click on the label container
-      ) {
-        sidebar.classList.add("collapsed");
-        updateSidebarLabelVisibility();
-      }
-    });
+    // Pass updateSidebarLabelVisibility so label always stays in sync with state
+    collapseHelpers = setupSidebarCollapseHandlers(
+      sidebar,
+      labelContainer,
+      updateSidebarLabelVisibility
+    );
 
     // Initial label visibility on load
     updateSidebarLabelVisibility();
   }
 
-  // Subscribe to filter changes to expand sidebar if none selected, and update mini icons
+  // Expand sidebar automatically if no classes are selected, and always update mini icon list
   subscribeToFilterChanges((state) => {
     if (!sidebar || !labelContainer) return;
-    // Open sidebar if no classes are selected, else just update the mini icon list
+    // Open sidebar if no classes are selected
     if (state.selectedClasses && state.selectedClasses.size === 0) {
-      sidebar.classList.remove("collapsed");
+      collapseHelpers && collapseHelpers.expandSidebar();
       logger.info("No class selected: expanding the class sidebar.");
     } else {
       logger.debug(
@@ -523,4 +504,105 @@ function createClassColorLine(className) {
 
   // No color found, no match
   return null;
+}
+
+/**
+ * Centralizes all sidebar collapse/expand/toggle logic and event handlers.
+ * Ensures a single source of truth for sidebar UI state and user interactions.
+ *
+ * @param {HTMLElement} sidebar - The sidebar DOM element.
+ * @param {HTMLElement} labelContainer - The label/minibar DOM element used for toggling.
+ * @param {function=} updateLabelVisibility - Optional callback to update label visibility after state change.
+ * @returns {Object} Helper methods for external control: {collapseSidebar, expandSidebar, toggleSidebar, isCollapsed}
+ */
+function setupSidebarCollapseHandlers(
+  sidebar,
+  labelContainer,
+  updateLabelVisibility
+) {
+  /**
+   * Collapse the sidebar by adding the 'collapsed' class.
+   */
+  function collapseSidebar() {
+    sidebar.classList.add("collapsed");
+    if (updateLabelVisibility) updateLabelVisibility();
+  }
+
+  /**
+   * Expand the sidebar by removing the 'collapsed' class.
+   */
+  function expandSidebar() {
+    sidebar.classList.remove("collapsed");
+    if (updateLabelVisibility) updateLabelVisibility();
+  }
+
+  /**
+   * Toggle the sidebar's collapsed state.
+   */
+  function toggleSidebar() {
+    sidebar.classList.toggle("collapsed");
+    if (updateLabelVisibility) updateLabelVisibility();
+  }
+
+  /**
+   * Returns true if the sidebar is currently collapsed.
+   * @returns {boolean}
+   */
+  function isCollapsed() {
+    return sidebar.classList.contains("collapsed");
+  }
+
+  // Track whether the mouse is currently over the sidebar
+  let mouseOverSidebar = false;
+
+  sidebar.addEventListener("mouseenter", () => {
+    mouseOverSidebar = true;
+  });
+
+  sidebar.addEventListener("mouseleave", () => {
+    mouseOverSidebar = false;
+    // Collapse only if sidebar is open and the mouse just left
+    if (!isCollapsed()) {
+      collapseSidebar();
+    }
+  });
+
+  // Handler for clicking the label (persistent minibar)
+  labelContainer.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleSidebar();
+  });
+
+  // Accessibility: Keyboard "Enter"/"Space" toggles sidebar
+  labelContainer.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleSidebar();
+    }
+  });
+
+  // Collapse sidebar when clicking anywhere outside sidebar or labelContainer
+  document.addEventListener("click", function (event) {
+    if (
+      !isCollapsed() &&
+      !sidebar.contains(event.target) &&
+      event.target !== labelContainer
+    ) {
+      collapseSidebar();
+    }
+  });
+
+  // Collapse sidebar when the user scrolls anywhere, but only if the mouse is not over the sidebar
+  document.addEventListener(
+    "scroll",
+    function (event) {
+      if (!isCollapsed() && !mouseOverSidebar) {
+        collapseSidebar();
+      }
+    },
+    true // Use capture so all scroll events bubble here
+  );
+
+  // Return helper functions for use in setupClassSidebar or elsewhere
+  return { collapseSidebar, expandSidebar, toggleSidebar, isCollapsed };
 }
