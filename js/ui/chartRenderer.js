@@ -105,22 +105,23 @@ function groupDataByClass(filtered) {
   const fullDates = getFullDateRange(allDateArr);
 
   // 2. Interpolate for each class (simple: carry last value forward)
+  /**
+   * For each class, create an array of points for all X-axis dates.
+   * If a point exists for a date, include it; if not, insert a null for y-value.
+   * This makes Plotly connect only actual data points and leaves gaps at missing days.
+   */
   for (const key of Object.keys(grouped)) {
     const dataByDate = {};
     grouped[key].forEach((point) => (dataByDate[point.rawDate] = point));
-    let lastY = null;
-    let lastYear = null;
     grouped[key] = fullDates.map((date) => {
       if (dataByDate[date]) {
-        lastY = dataByDate[date].y;
-        lastYear = dataByDate[date].year;
         return dataByDate[date];
       } else {
-        // You can interpolate here instead of carrying forward if you want
+        // Insert a null Y-value for missing days so Plotly draws gaps.
         return {
           x: `${parseInt(date.slice(4, 6))}/${parseInt(date.slice(6, 8))}`,
-          year: lastYear,
-          y: lastY, // or use null if you want gaps
+          year: null,
+          y: null,
           rawDate: date,
           customdata: {
             class: key,
@@ -167,6 +168,7 @@ function prepareTraces(grouped, isDPS) {
       p.y, // raw value
       isDPS ? getAdjustedValueForClass(key, p.y) : p.y, // adjusted value for DPS (halved if composite)
       getDisplayLabelForClass(key), // legend/label
+      toISODate(p.rawDate), // 7: ISO date string (e.g. "2024-06-08")
     ]);
 
     logger.debug(`Trace for class ${key}:`);
@@ -190,16 +192,19 @@ function prepareTraces(grouped, isDPS) {
           Job: %{customdata[6]}<br>
           Parses: %{customdata[1]}<br>
           Percentile: %{customdata[2]}<br>
-          DPS: %{customdata[5]} (%{customdata[3]})
+          DPS: %{customdata[5]} (%{customdata[3]})<br>
+          Date: %{customdata[7]}
           <extra></extra>
         `
         : `
           Job: %{customdata[0]}<br>
           Parses: %{customdata[1]}<br>
           Percentile: %{customdata[2]}<br>
-          HPS: %{customdata[4]}
+          HPS: %{customdata[4]}<br>
+          Date: %{customdata[7]}
           <extra></extra>
         `,
+      connectgaps: true,
     };
     const color = getClassColor(key);
     trace.line = { color };
@@ -407,33 +412,26 @@ export function renderComparisonLineChart(
 
       for (const date of dateList) {
         const pObj = byClassDate[className][date] || {};
-        // Carry forward last known value for missing data points
-        const refVal =
-          pObj[referencePercentile] !== undefined
-            ? pObj[referencePercentile]
-            : lastRefVal;
-        const cmpVal = pObj[cmp] !== undefined ? pObj[cmp] : lastCmpVal;
-        // Update last known values if defined
-        if (refVal !== undefined) lastRefVal = refVal;
-        if (cmpVal !== undefined) lastCmpVal = cmpVal;
-        // Only plot points after first known (skip leading missing)
+        const refVal = pObj[referencePercentile];
+        const cmpVal = pObj[cmp];
+        // Only plot if BOTH percentiles exist for this date
         if (refVal !== undefined && cmpVal !== undefined) {
           x.push(date);
-          // Calculate diff and percent diff, both rounded to two decimals
+          // ... push diff and custom as before
           const diff = Number((cmpVal - refVal).toFixed(2));
           const pctDiff =
             refVal !== 0
               ? Number((((cmpVal - refVal) / refVal) * 100).toFixed(2))
               : 0;
           custom.push([
-            getDisplayLabelForClass(className), // 0: Use display label here
-            `${getOrdinal(referencePercentile)}`, // 1: Reference Percentile (with suffix)
-            Math.round(refVal), // 2: Rounded reference value
-            `${getOrdinal(cmp)}`, // 3: Comparison Percentile (with suffix)
-            Math.round(cmpVal), // 4: Rounded comparison value
-            diff, // 5: Difference (absolute)
-            pctDiff, // 6: Percent diff
-            toISODate(date), // 7: YYYY-MM-DD
+            getDisplayLabelForClass(className),
+            `${getOrdinal(referencePercentile)}`,
+            Math.round(refVal),
+            `${getOrdinal(cmp)}`,
+            Math.round(cmpVal),
+            diff,
+            pctDiff,
+            toISODate(date),
           ]);
           y.push(diff);
         }
@@ -467,6 +465,7 @@ export function renderComparisonLineChart(
           `Diff: %{customdata[6]}% (%{customdata[5]})<br>` +
           `Date: %{customdata[7]}` +
           `<extra></extra>`,
+        connectgaps: true,
       };
       const color = getClassColor(className);
       trace.line = { color };
