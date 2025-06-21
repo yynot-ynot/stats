@@ -2,7 +2,8 @@
 body {
   font-family: sans-serif;
   padding: 1rem 2rem;
-  background-color: #f9f9f9;
+  background: #181A1B !important;
+  color: #fff;
 }
 
 /* Heading Styling */
@@ -21,19 +22,20 @@ table {
   border-collapse: collapse;
   width: 100%;
   margin-top: 1rem;
-  background: white;
+  background: #181A1B;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 th,
 td {
-  border: 1px solid #ccc;
+  border: 1px solid #333;
   padding: 8px 10px;
   text-align: left;
 }
 
 th {
-  background-color: #efefef;
+  background-color: #232527;
+  color: #fff;
 }
 
 /* Filter container: stack vertically */
@@ -72,9 +74,10 @@ th {
 /* Custom dropdown container (overlay style) */
 .custom-dropdown {
   position: absolute;
-  background: white;
-  border: 1px solid #ccc;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #232527;
+  border: 1px solid #333;
+  box-shadow: 0 2px 8px #000;
+  color: #fff;
   width: max-content;
   min-width: 200px;
   z-index: 100;
@@ -87,7 +90,7 @@ th {
 }
 
 .custom-dropdown div:hover {
-  background-color: #f0f0f0;
+  background-color: #353535;
 }
 
 /* Hide dropdown by default */
@@ -141,8 +144,8 @@ th {
   max-width: 420px;
   /* You can keep this as a safety limit */
   height: 100%;
-  background: #ffffff;
-  border-left: 1px solid #ccc;
+  background: #232527;
+  border-left: 1px solid #333;
   box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
   padding: 1.2rem 1rem 1rem 1rem;
   display: flex;
@@ -183,9 +186,9 @@ th {
   width: 108px;
   min-height: 40px;
   z-index: auto;
-  background: #fff;
-  color: #2582ca;
-  border: 1px solid #ccc;
+  background: #232527;
+  color: #7cc7ff;
+  border: 1px solid #333;
   border-left: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
@@ -234,7 +237,7 @@ th {
 #sidebar-label-container .label-text:focus,
 #sidebar-classes-label:active,
 #sidebar-classes-label:focus {
-  background: #eaf5ff;
+  background: #232527;
   color: #005cbf;
   outline: none;
 }
@@ -254,7 +257,7 @@ th {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: #f9f9f9;
+  background: #232527;
   border: 1.5px solid #e3c17a;
   box-shadow: 0 1px 4px #ffd07344;
   overflow: hidden;
@@ -358,7 +361,7 @@ th {
   object-fit: contain;
   display: block;
   border-radius: 0;
-  background: none;
+  background: #232527;
 }
 
 .class-icon .fallback-label {
@@ -369,7 +372,7 @@ th {
   line-height: 64px;
   white-space: normal;
   padding: 0 2px;
-  background: #f7f7f7;
+  background: #232527;
   border-radius: 6px;
 }
 
@@ -423,9 +426,9 @@ th {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: #fff;
+  background: #232527;
   object-fit: cover;
-  box-shadow: 0 1px 6px #ffd07344;
+  box-shadow: none;
   position: relative;
   z-index: 1;
   transition: box-shadow 0.13s;
@@ -461,9 +464,9 @@ th {
   width: 42px;
   height: 42px;
   border-radius: 6px;
-  background: #f9f9f9;
+  background: #232527;
   border: none;
-  box-shadow: 0 1px 4px #ffd07344;
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -474,9 +477,9 @@ th {
   width: 42px;
   height: 42px;
   border: none;
-  background: #fff;
+  background: none;
   object-fit: cover;
-  box-shadow: 0 1px 3px #ffd07344;
+  box-shadow: none;
   position: relative;
   transition: box-shadow 0.13s;
 }
@@ -531,9 +534,9 @@ th {
   width: 108px;
   min-height: 40px;
   z-index: auto;
-  background: #fff;
-  color: #2582ca;
-  border: 1px solid #ccc;
+  background: #232527;
+  color: #7cc7ff;
+  border: 1px solid #333;
   border-left: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
@@ -574,7 +577,7 @@ th {
   font-size: 1.08rem;
   color: #005cbf;
   font-weight: 700;
-  background: #fff;
+  background: #232527;
   border-radius: 7px;
   padding: 3px 12px;
     display: flex;
@@ -636,7 +639,7 @@ th {
   display: block;
   font-weight: 600;
   font-size: 1.06rem;
-  color: #253858;
+  color: #60aaff;
 }
 
 #percentile-label,
@@ -839,7 +842,7 @@ th {
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.85em;
-  color: #333;
+  color: #ccc;
   font-weight: bold;
   white-space: nowrap;
   z-index: 4;
@@ -877,7 +880,7 @@ th {
   text-align: center;
   font-size: 1.05em;
   font-weight: 700;
-  color: #888;
+  color: #ccc;
   background: none;
   border-radius: 50%;
   padding: 0;

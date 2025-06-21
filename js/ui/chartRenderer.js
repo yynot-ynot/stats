@@ -610,14 +610,25 @@ function plotChartWithLayout(
       categoryarray: sortedDateLabels,
       tickvals,
       ticktext,
+      color: "#FFFFFF", // White axis label/tick text
+      gridcolor: "#444444", // Medium-dark grid lines
+      linecolor: "#666666", // Axis lines, slightly lighter than grid
+      tickfont: { color: "#CCCCCC" }, // Lighter tick labels
     },
     yaxis: {
       title: yAxisTitle,
       fixedrange: fixedRange,
+      gridcolor: "#444444", // Medium-dark grid lines
     },
     margin: { t: 60, l: 50, r: 30, b: 90 },
     annotations,
     showlegend: false,
+    paper_bgcolor: "#181A1B", // Nearly black/dark gray (matches Brave's dark)
+    plot_bgcolor: "#181A1B",
+    font: {
+      color: "#FFF",
+      family: "Inter, Roboto, Arial, sans-serif",
+    },
   };
   Plotly.newPlot(container, traces, layout, { responsive: true });
 }
