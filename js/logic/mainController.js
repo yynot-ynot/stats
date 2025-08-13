@@ -10,7 +10,7 @@ import {
   populateAllFilters,
   setupHeaderBindings,
 } from "../ui/filterControls.js";
-import { setupClassSidebar } from "../ui/classSidebarManager.js";
+import { setupJobSidebar } from "../ui/jobSidebarManager.js";
 import { setupDpsTypeSidebarManager } from "../ui/dpsTypeSidebarManager.js";
 
 import { setupDataDisplayManager } from "./dataDisplayManager.js";
@@ -77,10 +77,10 @@ export async function init() {
     );
     setupDpsTypeSidebarManager(dpsTypes);
 
-    const uniqueClasses = Array.from(new Set(allData.map((d) => d.class)));
-    setupClassSidebar(uniqueClasses); // uses idle batching to avoid blocking
+    const uniqueJobs = Array.from(new Set(allData.map((d) => d.class)));
+    setupJobSidebar(uniqueJobs); // uses idle batching to avoid blocking
     // Force initial notification so filter listeners fire on startup
-    updateFilterValue("selectedClasses", filterState.selectedClasses); // This will notify listeners
+    updateFilterValue("selectedJobs", filterState.selectedJobs); // This will notify listeners
 
     const tFiltersEnd = performance.now();
     logger.debug(

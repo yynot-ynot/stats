@@ -12,7 +12,7 @@ export const filterState = {
   selectedDpsType: "",
   selectedReferencePercentile: "",
   selectedComparisonPercentiles: new Set(),
-  selectedClasses: new Set(),
+  selectedJobs: new Set(),
   listeners: new Set(),
 };
 

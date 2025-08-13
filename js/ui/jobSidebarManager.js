@@ -4,60 +4,56 @@ import {
   updateSidebarLabelVisibility,
 } from "../shared/filterState.js";
 import { getLogger } from "../shared/logging/logger.js";
-import {
-  CLASS_ICONS,
-  CLASS_GROUPS,
-  CLASS_COLORS,
-} from "../config/appConfig.js";
+import { JOB_ICONS, JOB_GROUPS, JOB_COLORS } from "../config/appConfig.js";
 
-const logger = getLogger("classSidebarManager");
+const logger = getLogger("jobSidebarManager");
 
 /**
- * Create a class icon element for use in the sidebar grid.
- * Handles both regular classes and special paired healer classes.
- * - For single classes: loads icon image (if available) from CLASS_ICONS, with fallback to text label.
- * - For paired healer classes (e.g., "White Mage+Sage" or "Scholar (x2)"):
+ * Create a job icon element for use in the sidebar grid.
+ * Handles both regular jobs and special paired healer jobs.
+ * - For single jobs: loads icon image (if available) from JOB_ICONS, with fallback to text label.
+ * - For paired healer jobs (e.g., "White Mage+Sage" or "Scholar (x2)"):
  *     Uses createPairedHealerIconElement to render two icons together, styled as a pair.
  * The returned element will emit a filter update when toggled/selected.
  *
- * @param {string} className - The class name or combo string. Used as value and data-attribute.
- * @param {Set<string>} selectedClasses - Set of currently selected class names for updating selection state.
+ * @param {string} jobName - The job name or combo string. Used as value and data-attribute.
+ * @param {Set<string>} selectedJobs - Set of currently selected job names for updating selection state.
  * @returns {HTMLElement} The sidebar icon element (single or paired).
  */
-function createClassIconElement(className, selectedClasses) {
-  // Check if the className represents a special paired healer combo (e.g., "White Mage+Sage").
+function createJobIconElement(jobName, selectedJobs) {
+  // Check if the jobName represents a special paired healer combo (e.g., "White Mage+Sage").
   // If so, render using the paired icon element (two icons in one cell).
-  const paired = parsePairedHealerClasses(className);
+  const paired = parsePairedHealerJobs(jobName);
   if (paired) {
     // Render a large paired healer icon (side-by-side icons with +, for main grid use)
-    return createPairedHealerIconElement(className, paired, selectedClasses);
+    return createPairedHealerIconElement(jobName, paired, selectedJobs);
   }
 
-  // Create the main icon div for a single class
+  // Create the main icon div for a single job
   const iconDiv = document.createElement("div");
-  iconDiv.classList.add("class-icon");
-  iconDiv.setAttribute("data-class", className);
+  iconDiv.classList.add("job-icon");
+  iconDiv.setAttribute("data-class", jobName);
 
-  // Add a fallback label (the class name text) for use if the image fails or is missing
+  // Add a fallback label (the job name text) for use if the image fails or is missing
   const fallbackLabel = document.createElement("span");
-  fallbackLabel.textContent = className;
+  fallbackLabel.textContent = jobName;
   fallbackLabel.classList.add("fallback-label");
   iconDiv.appendChild(fallbackLabel);
 
-  // Attempt to load the icon image from the CLASS_ICONS mapping.
+  // Attempt to load the icon image from the JOB_ICONS mapping.
   // If no mapping is found, show warning and rely on fallback text label.
   let iconUrl;
-  if (CLASS_ICONS[className]) {
-    iconUrl = CLASS_ICONS[className];
+  if (JOB_ICONS[jobName]) {
+    iconUrl = JOB_ICONS[jobName];
   } else {
     iconUrl = "";
     logger.warn(
-      `No icon mapping found for class "${className}" in CLASS_ICONS. No image will be loaded.`
+      `No icon mapping found for job "${jobName}" in JOB_ICONS. No image will be loaded.`
     );
   }
   const img = document.createElement("img");
   img.src = iconUrl;
-  img.alt = className;
+  img.alt = jobName;
   img.loading = "lazy";
 
   img.onload = () => {
@@ -69,22 +65,22 @@ function createClassIconElement(className, selectedClasses) {
     img.remove();
     fallbackLabel.style.display = "block";
     logger.warn(
-      `Class icon failed to load for "${className}". URL attempted: ${img.src}`
+      `Job icon failed to load for "${jobName}". URL attempted: ${img.src}`
     );
   };
 
   iconDiv.appendChild(img);
 
-  // Allow users to select/deselect the class by clicking this icon
-  // Selection state is reflected by the 'selected' class, and filterState is updated accordingly
+  // Allow users to select/deselect the job by clicking this icon
+  // Selection state is reflected by the 'selected' job, and filterState is updated accordingly
   iconDiv.addEventListener("click", () => {
     if (iconDiv.classList.toggle("selected")) {
-      selectedClasses.add(className);
+      selectedJobs.add(jobName);
     } else {
-      selectedClasses.delete(className);
+      selectedJobs.delete(jobName);
     }
     // Always notify filterState listeners after change
-    updateFilterValue("selectedClasses", new Set(selectedClasses));
+    updateFilterValue("selectedJobs", new Set(selectedJobs));
   });
 
   return iconDiv;
@@ -92,56 +88,56 @@ function createClassIconElement(className, selectedClasses) {
 
 /**
  * Render a group section with section header and icon rows (max 4 items per row).
- * - Supports displaying paired healer classes (e.g., "White Mage+Sage" or "Scholar (x2)")
+ * - Supports displaying paired healer jobs (e.g., "White Mage+Sage" or "Scholar (x2)")
  *   using a special paired icon renderer.
- * - Uses CLASS_GROUPS for known roles and class sets.
- * - Regular class names are rendered with createClassIconElement.
- * - Paired healers are detected using parsePairedHealerClasses and rendered as side-by-side mini-icons.
+ * - Uses JOB_GROUPS for known roles and job sets.
+ * - Regular job names are rendered with createJobIconElement.
+ * - Paired healers are detected using parsePairedHealerJobs and rendered as side-by-side mini-icons.
  *
- * @param {string} groupName - The name of the class group.
- * @param {Array<string>} classList - List of class names in this group.
- * @param {Set<string>} selectedClasses
+ * @param {string} groupName - The name of the job group.
+ * @param {Array<string>} jobList - List of job names in this group.
+ * @param {Set<string>} selectedJobs
  * @returns {HTMLElement} The group section element.
  */
-function renderGroupSection(groupName, classList, selectedClasses) {
+function renderGroupSection(groupName, jobList, selectedJobs) {
   const section = document.createElement("div");
-  section.classList.add("class-group-section");
+  section.classList.add("job-group-section");
 
   // Section header
   const header = document.createElement("div");
-  header.classList.add("class-group-header");
+  header.classList.add("job-group-header");
   header.textContent = groupName;
   section.appendChild(header);
 
-  // Helper: returns true if this class is a paired healer combo
-  function isPairedHealer(className) {
-    return groupName === "Healer" && parsePairedHealerClasses(className);
+  // Helper: returns true if this job is a paired healer combo
+  function isPairedHealer(jobName) {
+    return groupName === "Healer" && parsePairedHealerJobs(jobName);
   }
 
   // For row grouping: treat each paired healer as a single "slot"
   let row = null,
     rowCount = 0;
-  for (let i = 0; i < classList.length; ) {
+  for (let i = 0; i < jobList.length; ) {
     // Start a new row every 4 items
     if (!row || rowCount === 0) {
       row = document.createElement("div");
-      row.classList.add("class-icon-row");
+      row.classList.add("job-icon-row");
       section.appendChild(row);
       rowCount = 0;
     }
 
-    const className = classList[i];
-    if (isPairedHealer(className)) {
+    const jobName = jobList[i];
+    if (isPairedHealer(jobName)) {
       const iconDiv = createPairedHealerIconElement(
-        className,
-        parsePairedHealerClasses(className),
-        selectedClasses
+        jobName,
+        parsePairedHealerJobs(jobName),
+        selectedJobs
       );
       row.appendChild(iconDiv);
       rowCount++;
       i++;
     } else {
-      const iconDiv = createClassIconElement(className, selectedClasses);
+      const iconDiv = createJobIconElement(jobName, selectedJobs);
       row.appendChild(iconDiv);
       rowCount++;
       i++;
@@ -154,34 +150,34 @@ function renderGroupSection(groupName, classList, selectedClasses) {
 
 /**
  * Helper for rendering a single mini healer icon.
- * @param {string} className
+ * @param {string} jobName
  * @returns {HTMLElement}
  */
-function createMiniHealerIcon(className) {
+function createMiniHealerIcon(jobName) {
   const iconDiv = document.createElement("div");
-  iconDiv.classList.add("mini-class-icon", "mini-healer-pair");
-  const iconUrl = CLASS_ICONS[className];
+  iconDiv.classList.add("mini-job-icon", "mini-healer-pair");
+  const iconUrl = JOB_ICONS[jobName];
   if (iconUrl) {
     const img = document.createElement("img");
     img.src = iconUrl;
-    img.alt = className;
+    img.alt = jobName;
     img.loading = "lazy";
     iconDiv.appendChild(img);
   } else {
-    iconDiv.textContent = className[0];
+    iconDiv.textContent = jobName[0];
   }
   return iconDiv;
 }
 
 /**
  * Extract individual healer names from a paired/combo string.
- * Uses CLASS_GROUPS.Healer for the allowed list.
+ * Uses JOB_GROUPS.Healer for the allowed list.
  */
-export function parsePairedHealerClasses(className) {
-  const HEALER_NAMES = CLASS_GROUPS.Healer;
+export function parsePairedHealerJobs(jobName) {
+  const HEALER_NAMES = JOB_GROUPS.Healer;
   // Regex for combos like "White Mage+Sage" or "Astrologian+Scholar"
   const plusCombo = /^([\w\s]+)\+([\w\s]+)$/;
-  const matchPlus = className.match(plusCombo);
+  const matchPlus = jobName.match(plusCombo);
   if (matchPlus) {
     const [_, first, second] = matchPlus;
     if (
@@ -193,7 +189,7 @@ export function parsePairedHealerClasses(className) {
   }
   // Regex for "Healer (x2)" e.g. "White Mage (x2)"
   const dupCombo = /^([\w\s]+)\s*\(x2\)$/;
-  const matchDup = className.match(dupCombo);
+  const matchDup = jobName.match(dupCombo);
   if (matchDup) {
     const healer = matchDup[1].trim();
     if (HEALER_NAMES.includes(healer)) {
@@ -207,20 +203,16 @@ export function parsePairedHealerClasses(className) {
  * Render a paired/combo healer icon: two overlapping avatars as siblings, with robust fallback handling.
  * When selected, ensures both individual healers are included for HPS plotting.
  * When deselected, only removes the healers if they weren't selected as singles separately.
- * @param {string} className - The full combo name.
+ * @param {string} jobName - The full combo name.
  * @param {string[]} healerNames - The two healer names extracted from the combo string.
- * @param {Set<string>} selectedClasses - Set of currently selected class names.
+ * @param {Set<string>} selectedJobs - Set of currently selected job names.
  * @returns {HTMLElement} - The sidebar element containing the paired healer icon.
  */
-function createPairedHealerIconElement(
-  className,
-  healerNames,
-  selectedClasses
-) {
+function createPairedHealerIconElement(jobName, healerNames, selectedJobs) {
   // Outer div representing the grid slot for this paired icon
   const pairDiv = document.createElement("div");
-  pairDiv.classList.add("class-icon", "paired-healer-icon");
-  pairDiv.setAttribute("data-class", className);
+  pairDiv.classList.add("job-icon", "paired-healer-icon");
+  pairDiv.setAttribute("data-class", jobName);
 
   // Inner flexbox container for the two overlapping avatars
   const innerDiv = document.createElement("div");
@@ -228,7 +220,7 @@ function createPairedHealerIconElement(
 
   // Fallback label: only shown if both images fail to load
   const fallbackLabel = document.createElement("span");
-  fallbackLabel.textContent = className;
+  fallbackLabel.textContent = jobName;
   fallbackLabel.classList.add("fallback-label");
   fallbackLabel.style.display = "none";
   pairDiv.appendChild(fallbackLabel);
@@ -237,7 +229,7 @@ function createPairedHealerIconElement(
   let failedCount = 0;
   healerNames.forEach((healer, idx) => {
     const img = document.createElement("img");
-    img.src = CLASS_ICONS[healer] || "";
+    img.src = JOB_ICONS[healer] || "";
     img.alt = healer;
     img.classList.add("paired-healer-img");
     img.loading = "lazy";
@@ -252,7 +244,7 @@ function createPairedHealerIconElement(
         fallbackLabel.style.display = "block";
       }
       logger.warn(
-        `Paired healer icon failed to load for "${healer}" in "${className}". URL attempted: ${img.src}`
+        `Paired healer icon failed to load for "${healer}" in "${jobName}". URL attempted: ${img.src}`
       );
     };
 
@@ -265,52 +257,52 @@ function createPairedHealerIconElement(
     // Save a snapshot of single-healer selection *before* this click
     const beforeSingles = new Set();
     healerNames.forEach((h) => {
-      if (selectedClasses.has(h)) beforeSingles.add(h);
+      if (selectedJobs.has(h)) beforeSingles.add(h);
     });
 
     if (pairDiv.classList.toggle("selected")) {
       // Selecting: add the pair string itself
-      selectedClasses.add(className);
+      selectedJobs.add(jobName);
     } else {
       // Deselecting: remove the pair string,
       // but only remove the individual healers if they weren't selected individually
-      selectedClasses.delete(className);
+      selectedJobs.delete(jobName);
       healerNames.forEach((h) => {
         // Only remove if not in the set before (i.e., not picked as a single)
         if (!beforeSingles.has(h)) {
-          selectedClasses.delete(h);
+          selectedJobs.delete(h);
         }
       });
     }
     // Always notify filterState listeners after change
-    updateFilterValue("selectedClasses", new Set(selectedClasses));
+    updateFilterValue("selectedJobs", new Set(selectedJobs));
   });
 
   return pairDiv;
 }
 
 /**
- * Setup the class sidebar with grouped icons, section headers, and centralized click updates.
+ * Setup the job sidebar with grouped icons, section headers, and centralized click updates.
  * Lays out sections/rows synchronously. Image loading is independent.
- * Also handles the persistent "Classes" label with a vertical mini-icon list
+ * Also handles the persistent "Jobs" label with a vertical mini-icon list
  * that is visible only when the sidebar is collapsed.
- * Any classes in classList not found in the predefined groups will appear in an "Other" section at the bottom.
+ * Any jobs in jobList not found in the predefined groups will appear in an "Other" section at the bottom.
  * Sidebar expand/collapse logic is centralized for maintainability.
  *
- * @param {Array<string>} classList - List of class names (all available).
+ * @param {Array<string>} jobList - List of job names (all available).
  */
-export function setupClassSidebar(classList) {
-  const container = document.getElementById("class-icons-container");
+export function setupJobSidebar(jobList) {
+  const container = document.getElementById("job-icons-container");
   if (!container) {
-    logger.warn("Class icons container not found; skipping sidebar setup.");
+    logger.warn("Job icons container not found; skipping sidebar setup.");
     return;
   }
 
   container.innerHTML = ""; // Clear old content if any
-  const selectedClasses = new Set();
+  const selectedJobs = new Set();
 
-  // Track which class names are already displayed, so we can find "leftover" classes later
-  const displayedClassNames = new Set();
+  // Track which job names are already displayed, so we can find "leftover" jobs later
+  const displayedJobNames = new Set();
 
   // --- Grouped Section/Row Layout ---
   const groupOrder = [
@@ -321,61 +313,53 @@ export function setupClassSidebar(classList) {
     "Magical Ranged DPS",
   ];
   for (const group of groupOrder) {
-    let groupClassNames = [];
+    let groupJobNames = [];
     if (group === "Healer") {
-      // Use all singles PLUS all pair names in classList that parse as paired healers
-      const singles = CLASS_GROUPS["Healer"];
-      const pairs = classList.filter((name) => parsePairedHealerClasses(name));
-      groupClassNames = [...singles, ...pairs];
+      // Use all singles PLUS all pair names in jobList that parse as paired healers
+      const singles = JOB_GROUPS["Healer"];
+      const pairs = jobList.filter((name) => parsePairedHealerJobs(name));
+      groupJobNames = [...singles, ...pairs];
     } else {
-      groupClassNames = CLASS_GROUPS[group] || [];
+      groupJobNames = JOB_GROUPS[group] || [];
     }
     // Mark as displayed
-    groupClassNames.forEach((name) => displayedClassNames.add(name));
-    const groupSection = renderGroupSection(
-      group,
-      groupClassNames,
-      selectedClasses
-    );
+    groupJobNames.forEach((name) => displayedJobNames.add(name));
+    const groupSection = renderGroupSection(group, groupJobNames, selectedJobs);
     container.appendChild(groupSection);
   }
 
-  // --- Add "Other" section for any class names in classList not already displayed ---
-  const leftovers = classList.filter(
-    (className) => !displayedClassNames.has(className)
+  // --- Add "Other" section for any job names in jobList not already displayed ---
+  const leftovers = jobList.filter(
+    (jobName) => !displayedJobNames.has(jobName)
   );
   if (leftovers.length > 0) {
-    const otherSection = renderGroupSection(
-      "Other",
-      leftovers,
-      selectedClasses
-    );
+    const otherSection = renderGroupSection("Other", leftovers, selectedJobs);
     container.appendChild(otherSection);
   }
 
-  const sidebar = document.getElementById("class-sidebar");
+  const sidebar = document.getElementById("job-sidebar");
   const labelContainer = document.getElementById("sidebar-label-container");
   const selectedIconsDiv = document.getElementById("sidebar-selected-icons");
 
   /**
    * Helper: Render mini selected icons vertically under the label.
-   * Each selected class (including pairs) is shown with its icon and color line.
-   * @param {Array<string>} selectedClassNames
+   * Each selected job (including pairs) is shown with its icon and color line.
+   * @param {Array<string>} selectedJobNames
    */
-  function updateSelectedMiniIcons(selectedClassNames) {
+  function updateSelectedMiniIcons(selectedJobNames) {
     if (!selectedIconsDiv) return;
     selectedIconsDiv.innerHTML = "";
-    selectedClassNames.forEach((className) => {
-      const paired = parsePairedHealerClasses(className);
+    selectedJobNames.forEach((jobName) => {
+      const paired = parsePairedHealerJobs(jobName);
       let iconDiv;
       if (paired) {
         // Overlapping mini-paired style for collapsed mini icons
         iconDiv = document.createElement("div");
-        iconDiv.classList.add("mini-class-icon", "mini-healer-pair-mini");
+        iconDiv.classList.add("mini-job-icon", "mini-healer-pair-mini");
 
         paired.forEach((healer, idx) => {
           const img = document.createElement("img");
-          img.src = CLASS_ICONS[healer] || "";
+          img.src = JOB_ICONS[healer] || "";
           img.alt = healer;
           img.loading = "lazy";
           img.classList.add("mini-healer-pair-img");
@@ -389,24 +373,24 @@ export function setupClassSidebar(classList) {
           iconDiv.appendChild(img);
         });
         // Tooltip for accessibility
-        iconDiv.title = className;
+        iconDiv.title = jobName;
       } else {
         iconDiv = document.createElement("div");
-        iconDiv.classList.add("mini-class-icon");
-        const iconUrl = CLASS_ICONS[className];
+        iconDiv.classList.add("mini-job-icon");
+        const iconUrl = JOB_ICONS[jobName];
         if (iconUrl) {
           const img = document.createElement("img");
           img.src = iconUrl;
-          img.alt = className;
+          img.alt = jobName;
           img.loading = "lazy";
           iconDiv.appendChild(img);
         } else {
-          iconDiv.textContent = className[0]; // fallback: first letter
+          iconDiv.textContent = jobName[0]; // fallback: first letter
         }
-        iconDiv.title = className;
+        iconDiv.title = jobName;
       }
-      // Add class color line after the icon
-      const colorLine = createClassColorLine(className);
+      // Add job color line after the icon
+      const colorLine = createJobColorLine(jobName);
 
       // Wrap icon and line in a container for correct alignment
       const iconLineContainer = document.createElement("div");
@@ -435,51 +419,51 @@ export function setupClassSidebar(classList) {
     updateSidebarLabelVisibility();
   }
 
-  // Expand sidebar automatically if no classes are selected, and always update mini icon list
+  // Expand sidebar automatically if no jobs are selected, and always update mini icon list
   subscribeToFilterChanges((state) => {
     if (!sidebar || !labelContainer) return;
-    // Open sidebar if no classes are selected
-    if (state.selectedClasses && state.selectedClasses.size === 0) {
+    // Open sidebar if no jobs are selected
+    if (state.selectedJobs && state.selectedJobs.size === 0) {
       collapseHelpers && collapseHelpers.expandSidebar();
-      logger.info("No class selected: expanding the class sidebar.");
+      logger.info("No job selected: expanding the job sidebar.");
     } else {
       logger.debug(
-        `Current selected classes: ${
-          state.selectedClasses && state.selectedClasses.size > 0
-            ? Array.from(state.selectedClasses).join(", ")
+        `Current selected jobs: ${
+          state.selectedJobs && state.selectedJobs.size > 0
+            ? Array.from(state.selectedJobs).join(", ")
             : "(none)"
         }`
       );
     }
     updateSelectedMiniIcons(
-      state.selectedClasses ? Array.from(state.selectedClasses) : []
+      state.selectedJobs ? Array.from(state.selectedJobs) : []
     );
     updateSidebarLabelVisibility(); // Always sync label visibility with sidebar state
   });
 }
 
 /**
- * Create a colored line (div) that visually indicates a class's color.
- * - For regular classes with a defined color, returns a single colored line.
- * - For paired/composite classes (e.g., "White Mage+Sage") with colors for either/both components,
+ * Create a colored line (div) that visually indicates a job's color.
+ * - For regular jobs with a defined color, returns a single colored line.
+ * - For paired/composite jobs (e.g., "White Mage+Sage") with colors for either/both components,
  *   returns two stacked lines (one per matching component, vertically separated).
- * - If neither the class nor its paired components have a color, returns null.
+ * - If neither the job nor its paired components have a color, returns null.
  *
- * @param {string} className - The class name or paired class string.
+ * @param {string} jobName - The job name or paired job string.
  * @returns {HTMLElement|null} The colored line element(s), or null if no color found.
  */
-function createClassColorLine(className) {
-  const color = CLASS_COLORS[className];
+function createJobColorLine(jobName) {
+  const color = JOB_COLORS[jobName];
   if (color) {
-    // Single color line (normal class)
+    // Single color line (normal job)
     const line = document.createElement("div");
-    line.classList.add("mini-class-color-line");
+    line.classList.add("mini-job-color-line");
     line.style.background = color;
     return line;
   }
 
-  // Try to split as a paired class and get colors for both
-  const paired = parsePairedHealerClasses(className);
+  // Try to split as a paired job and get colors for both
+  const paired = parsePairedHealerJobs(jobName);
   if (paired) {
     const wrapper = document.createElement("div");
     wrapper.style.display = "flex";
@@ -487,10 +471,10 @@ function createClassColorLine(className) {
     wrapper.style.gap = "4px"; // spacing between lines
 
     paired.forEach((p) => {
-      const c = CLASS_COLORS[p];
+      const c = JOB_COLORS[p];
       if (c) {
         const line = document.createElement("div");
-        line.classList.add("mini-class-color-line");
+        line.classList.add("mini-job-color-line");
         line.style.background = c;
         wrapper.appendChild(line);
       }
@@ -521,7 +505,7 @@ function setupSidebarCollapseHandlers(
   updateLabelVisibility
 ) {
   /**
-   * Collapse the sidebar by adding the 'collapsed' class.
+   * Collapse the sidebar by adding the 'collapsed' job.
    */
   function collapseSidebar() {
     sidebar.classList.add("collapsed");
@@ -529,7 +513,7 @@ function setupSidebarCollapseHandlers(
   }
 
   /**
-   * Expand the sidebar by removing the 'collapsed' class.
+   * Expand the sidebar by removing the 'collapsed' job.
    */
   function expandSidebar() {
     sidebar.classList.remove("collapsed");
@@ -660,6 +644,6 @@ function setupSidebarCollapseHandlers(
     { passive: true }
   );
 
-  // Return helper functions for use in setupClassSidebar or elsewhere
+  // Return helper functions for use in setupJobSidebar or elsewhere
   return { collapseSidebar, expandSidebar, toggleSidebar, isCollapsed };
 }

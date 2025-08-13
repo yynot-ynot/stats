@@ -8,13 +8,13 @@ setModuleLogLevel("chartRenderer", "warn");
 setModuleLogLevel("dataDisplay", "warn");
 setModuleLogLevel("filterControls", "warn");
 setModuleLogLevel("dpsTypeSidebarManager", "warn");
-setModuleLogLevel("classSidebarManager", "warn");
+setModuleLogLevel("jobSidebarManager", "warn");
 
 // Path to the manifest file listing JSON assets
 export const FILE_MANIFEST_PATH = "js/config/file_manifest.json";
 
 // Filters required before rendering begins (mapped to filterState keys)
-export const REQUIRED_FILTERS = ["selectedClasses"];
+export const REQUIRED_FILTERS = ["selectedJobs"];
 
 // Full list of unified filter state keys
 export const ALL_FILTER_KEYS = [
@@ -24,7 +24,7 @@ export const ALL_FILTER_KEYS = [
   "selectedDpsType",
   "selectedReferencePercentile",
   "selectedComparisonPercentiles",
-  "selectedClasses",
+  "selectedJobs",
 ];
 
 // Default values for each dropdown (empty string means no default)
@@ -38,7 +38,7 @@ export const DEFAULTS = {
 };
 
 // List of dropdown IDs that should be multi-select
-export const MULTI_SELECTS = ["class-select", "percentile-compare-select"];
+export const MULTI_SELECTS = ["job-select", "percentile-compare-select"];
 
 // Custom order overrides (e.g., bosses)
 export const ORDER_OVERRIDES = {
@@ -50,8 +50,8 @@ export const ORDER_OVERRIDES = {
   ],
 };
 
-// Class icon URLs for the class sidebar
-export const CLASS_ICONS = {
+// Job icon URLs for the job sidebar
+export const JOB_ICONS = {
   Paladin:
     "https://lds-img.finalfantasyxiv.com/promo/h/V/NUXU4h6iXzF8HS4BxHKYf7vOa0.png",
   Warrior:
@@ -95,7 +95,7 @@ export const CLASS_ICONS = {
     "https://lds-img.finalfantasyxiv.com/promo/h/p/KOfXNPzKVJHsLIjefN16FbZ6bw.png",
 };
 
-export const CLASS_GROUPS = {
+export const JOB_GROUPS = {
   Tank: ["Paladin", "Warrior", "Dark Knight", "Gunbreaker"],
   Healer: ["White Mage", "Scholar", "Astrologian", "Sage"],
   "Melee DPS": ["Monk", "Dragoon", "Ninja", "Samurai", "Reaper", "Viper"],
@@ -103,8 +103,8 @@ export const CLASS_GROUPS = {
   "Magical Ranged DPS": ["Black Mage", "Summoner", "Red Mage", "Pictomancer"],
 };
 
-// Default colors per class (for DPS scatter plots and other visualizations)
-export const CLASS_COLORS = {
+// Default colors per job (for DPS scatter plots and other visualizations)
+export const JOB_COLORS = {
   Pictomancer: "#fc92e1", // #fc92e1  light pastel pink
   Dragoon: "#4164CD", // #4164CD  royal blue
   "Black Mage": "#A579D6", // #A579D6  soft lavender purple

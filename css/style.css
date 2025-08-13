@@ -126,14 +126,14 @@ th {
 }
 
 /* ==========================================================================
-   Class Sidebar: Grouped Icon Layout and Section Headers
+   Job Sidebar: Grouped Icon Layout and Section Headers
    --------------------------------------------------------------------------
-   - Shows class icons grouped by role (Tank, Healer, DPS).
+   - Shows job icons grouped by role (Tank, Healer, DPS).
    - 4 icons per row, with clear section headers.
    - Responsive, wider sidebar for neat layout.
    ========================================================================== */
 
-#class-sidebar {
+#job-sidebar {
   position: fixed;
   right: 0;
   top: 0;
@@ -158,7 +158,7 @@ th {
 }
 
 /* Section header for each group */
-.class-group-header {
+.job-group-header {
   font-size: 1.08rem;
   font-weight: bold;
   color: #2582ca;
@@ -167,12 +167,12 @@ th {
 }
 
 /* Collapsed (hidden) sidebar */
-#class-sidebar.collapsed {
+#job-sidebar.collapsed {
   transform: translateX(100%);
 }
 
 /* ==========================================================================
-   Persistent "Classes" Label Toggle & Mini Icon List
+   Persistent "Jobs" Label Toggle & Mini Icon List
    --------------------------------------------------------------------------
    - The entire #sidebar-label-container is clickable, not just the label text.
    - Vertical stack: label on top, selected mini-icons beneath.
@@ -209,10 +209,10 @@ th {
   /* <-- Adds space between the two elements */
 }
 
-/* Classes label at the top */
+/* Jobs label at the top */
 #sidebar-label-container .label-text,
-#sidebar-classes-label {
-  /* .label-text for new markup, #sidebar-classes-label for backward compatibility */
+#sidebar-jobs-label {
+  /* .label-text for new markup, #sidebar-jobs-label for backward compatibility */
   width: 100%;
   height: 40px;
   line-height: 40px;
@@ -235,8 +235,8 @@ th {
 #sidebar-label-container:focus,
 #sidebar-label-container .label-text:active,
 #sidebar-label-container .label-text:focus,
-#sidebar-classes-label:active,
-#sidebar-classes-label:focus {
+#sidebar-jobs-label:active,
+#sidebar-jobs-label:focus {
   background: #232527;
   color: #005cbf;
   outline: none;
@@ -253,7 +253,7 @@ th {
 }
 
 /* Each mini icon is small and has a subtle border/highlight */
-.mini-class-icon {
+.mini-job-icon {
   width: 28px;
   height: 28px;
   border-radius: 6px;
@@ -266,7 +266,7 @@ th {
   justify-content: center;
 }
 
-.mini-class-icon img {
+.mini-job-icon img {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -274,23 +274,23 @@ th {
   background: none;
 }
 
-.mini-class-color-line {
+.mini-job-color-line {
   display: inline-block;
   margin-left: 6px;
   vertical-align: middle;
   width: 42px;
   height: 4px;
   border-radius: 2px;
-  /* No background here; set in JS per class */
+  /* No background here; set in JS per job */
 }
 
 /* ==========================================================================
-   Class Sidebar: Icon Container and Icon Rows
+   Job Sidebar: Icon Container and Icon Rows
    --------------------------------------------------------------------------
-   - #class-icons-container now flex-columns group sections,
+   - #job-icons-container now flex-columns group sections,
      not all icons flat in a single wrap row.
    ========================================================================== */
-#class-icons-container {
+#job-icons-container {
   display: flex;
   flex-direction: column;
   /* Stacks each group-section vertically */
@@ -300,7 +300,7 @@ th {
   align-items: stretch;
 }
 
-.class-icon-row {
+.job-icon-row {
   display: flex;
   flex-direction: row;
   gap: 0.5rem;
@@ -314,13 +314,13 @@ th {
 }
 
 /* ==========================================================================
-   Class Sidebar: Icon Grid Slot (Shared Base)
+   Job Sidebar: Icon Grid Slot (Shared Base)
    --------------------------------------------------------------------------
-   - .icon-slot: Shared 64x64px cell for both single and paired class icons.
-   - Use for .class-icon and .paired-healer-icon for identical alignment/gap.
+   - .icon-slot: Shared 64x64px cell for both single and paired job icons.
+   - Use for .job-icon and .paired-healer-icon for identical alignment/gap.
    ========================================================================== */
 .icon-slot,
-.class-icon,
+.job-icon,
 .paired-healer-icon {
   flex: 0 0 64px;
   width: 64px;
@@ -336,12 +336,12 @@ th {
   margin-bottom: 0;
   overflow: hidden;
   transition: border-color 0.15s;
-  /* For .class-icon border, add below */
+  /* For .job-icon border, add below */
 }
 
 /* Selection outline for any selected icon */
 .icon-slot.selected,
-.class-icon.selected,
+.job-icon.selected,
 .paired-healer-icon.selected {
   outline: 2.5px solid #ffce63;
   outline-offset: 2px;
@@ -353,9 +353,9 @@ th {
 }
 
 /* ==========================================================================
-   Single Class Icon Styles (inside .icon-slot)
+   Single Job Icon Styles (inside .icon-slot)
    ========================================================================== */
-.class-icon img {
+.job-icon img {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -364,7 +364,7 @@ th {
   background: #232527;
 }
 
-.class-icon .fallback-label {
+.job-icon .fallback-label {
   display: block;
   text-align: center;
   font-size: 0.8rem;
@@ -376,7 +376,7 @@ th {
   border-radius: 6px;
 }
 
-.class-icon.selected::after {
+.job-icon.selected::after {
   content: "";
   position: absolute;
   top: 2px;
@@ -460,7 +460,7 @@ th {
 /* ==========================================================================
    Mini Icon Styles (collapsed sidebar)
    ========================================================================== */
-.mini-class-icon {
+.mini-job-icon {
   width: 42px;
   height: 42px;
   border-radius: 6px;
@@ -485,7 +485,7 @@ th {
 }
 
 /* Default mini icon images */
-.mini-class-icon img {
+.mini-job-icon img {
   width: 100%;
   height: 100%;
   object-fit: contain;

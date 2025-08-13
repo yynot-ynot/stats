@@ -1,10 +1,10 @@
 import { getLogger } from "../shared/logging/logger.js";
-import { REQUIRED_FILTERS, CLASS_GROUPS } from "../config/appConfig.js";
+import { REQUIRED_FILTERS, JOB_GROUPS } from "../config/appConfig.js";
 import {
   subscribeToFilterChanges,
   getCurrentFilterState,
 } from "../shared/filterState.js";
-import { parsePairedHealerClasses } from "../ui/classSidebarManager.js";
+import { parsePairedHealerJobs } from "../ui/jobSidebarManager.js";
 
 const logger = getLogger("dataDisplay");
 let globalData = [];
@@ -56,7 +56,7 @@ function areRequiredFiltersSelected(state) {
 
 /**
  * Update the main DPS and Healing charts using current data and filter state.
- * - For DPS: plots selected classes as is.
+ * - For DPS: plots selected jobs as is.
  * - For HPS: flattens paired healer selection into individual healers for plotting.
  * @param {Object} state - Current filter state snapshot.
  */
@@ -66,7 +66,7 @@ function updateChart(state) {
     selectedBoss,
     selectedPercentile,
     selectedDpsType,
-    selectedClasses,
+    selectedJobs,
   } = state;
 
   const baseFilters = {
@@ -77,13 +77,13 @@ function updateChart(state) {
 
   const dpsFilters = {
     ...baseFilters,
-    classNames: Array.from(selectedClasses),
+    jobNames: Array.from(selectedJobs),
     dps_type: selectedDpsType,
   };
-  // For HPS: plot exactly the same selected classes, not just healers.
+  // For HPS: plot exactly the same selected jobs, not just healers.
   const healingFilters = {
     ...baseFilters,
-    classNames: Array.from(selectedClasses),
+    jobNames: Array.from(selectedJobs),
   };
 
   const dpsData = globalData.filter((d) => "dps" in d);
@@ -111,7 +111,7 @@ function updateChart(state) {
 
 /**
  * Update the comparison charts (DPS & Healing percentile comparisons).
- * - For DPS: uses selected classes as is.
+ * - For DPS: uses selected jobs as is.
  * - For Healing: flattens paired healer selection into individual healers for plotting.
  * Show/hide charts based on filter completeness.
  * @param {Object} state - Current filter state snapshot.
@@ -123,7 +123,7 @@ function updateComparisonCharts(state) {
     selectedReferencePercentile,
     selectedComparisonPercentiles,
     selectedDpsType,
-    selectedClasses,
+    selectedJobs,
   } = state;
 
   const dpsCompContainer = document.getElementById(
@@ -156,19 +156,19 @@ function updateComparisonCharts(state) {
   // All filters are present, render charts
   if (message) message.style.display = "none";
 
-  // For DPS, use selected classes as-is.
+  // For DPS, use selected jobs as-is.
   const dpsFilters = {
     raid: selectedRaid,
     boss: selectedBoss,
-    classNames: Array.from(selectedClasses),
+    jobNames: Array.from(selectedJobs),
     dps_type: selectedDpsType,
   };
 
-  // For Healing, use the exact set of selected classes.
+  // For Healing, use the exact set of selected jobs.
   const hpsFilters = {
     raid: selectedRaid,
     boss: selectedBoss,
-    classNames: Array.from(selectedClasses),
+    jobNames: Array.from(selectedJobs),
   };
 
   const dpsData = globalData.filter((d) => "dps" in d);
@@ -195,21 +195,21 @@ function updateComparisonCharts(state) {
 }
 
 /**
- * Given the current Set of selected classes (including healer pairs),
- * returns a new Set of all individual healer classes that are represented,
+ * Given the current Set of selected jobs (including healer pairs),
+ * returns a new Set of all individual healer jobs that are represented,
  * flattening all paired healer selections to their components.
  * e.g., if ["Sage", "White Mage+Sage"] is selected, returns ["Sage", "White Mage"]
- * @param {Set<string>} selectedClasses
+ * @param {Set<string>} selectedJobs
  * @returns {Set<string>}
  */
-function getHealerClassesForHpsPlot(selectedClasses) {
+function getHealerJobsForHpsPlot(selectedJobs) {
   const result = new Set();
-  selectedClasses.forEach((className) => {
-    const pair = parsePairedHealerClasses(className);
+  selectedJobs.forEach((jobName) => {
+    const pair = parsePairedHealerJobs(jobName);
     if (pair) {
       pair.forEach((h) => result.add(h));
-    } else if (CLASS_GROUPS.Healer.includes(className)) {
-      result.add(className);
+    } else if (JOB_GROUPS.Healer.includes(jobName)) {
+      result.add(jobName);
     }
   });
   return result;

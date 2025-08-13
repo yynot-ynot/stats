@@ -1,4 +1,4 @@
-import { parsePairedHealerClasses } from "./classSidebarManager.js";
+import { parsePairedHealerClasses } from "./jobSidebarManager.js";
 import { CLASS_COLORS } from "../config/appConfig.js";
 import {
   getDisplayLabelForClass,

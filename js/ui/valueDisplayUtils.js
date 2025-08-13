@@ -1,6 +1,6 @@
 // js/ui/valueDisplayUtils.js
 
-import { parsePairedHealerClasses } from "./classSidebarManager.js";
+import { parsePairedHealerClasses } from "./jobSidebarManager.js";
 
 /**
  * Determines if the provided class name is a paired/composite (currently only healer) class.
