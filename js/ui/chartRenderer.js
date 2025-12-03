@@ -1,8 +1,8 @@
-import { parsePairedHealerClasses } from "./jobSidebarManager.js";
-import { CLASS_COLORS } from "../config/appConfig.js";
+import { parsePairedHealerJobs } from "./jobSidebarManager.js";
+import { JOB_COLORS } from "../config/appConfig.js";
 import {
-  getDisplayLabelForClass,
-  getAdjustedValueForClass,
+  getDisplayLabelForJob,
+  getAdjustedValueForJob,
 } from "./valueDisplayUtils.js";
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("chartRenderer");
@@ -43,36 +43,61 @@ function parseCompactDate(dateStr) {
 
 /**
  * Filter the dataset based on provided filter values.
- * Optionally expands any paired/composite class names in the classNames filter
- * (used for HPS; not for DPS). Non-paired classes are always included as-is.
+ * Optionally expands any paired/composite job names in the jobNames filter
+ * (used for HPS; not for DPS). Non-paired jobs are always included as-is.
  *
  * @param {Array<Object>} data - Full dataset.
  * @param {Object} filters - Filter criteria.
- * @param {boolean} [expandPairs=false] - Whether to expand paired/composite class names.
+ * @param {boolean} [expandPairs=false] - Whether to expand paired/composite job names.
  * @returns {Array<Object>} Filtered dataset.
  */
 function applyFilters(data, filters, expandPairs = false) {
-  const { raid, boss, percentile, classNames, dps_type } = filters;
-  const classNamesToUse = expandPairs
-    ? expandSelectedClasses(classNames)
-    : classNames;
+  const {
+    raid,
+    boss,
+    percentile,
+    dps_type,
+  } = filters;
+  const selectedNames = getSelectedJobNames(filters);
+  const namesToUse = expandPairs
+    ? expandSelectedJobs(selectedNames)
+    : selectedNames;
   return data.filter((entry) => {
+    const entryJob = entry.job ?? entry.class;
     return (
       (!raid || entry.raid === raid) &&
       (!boss || entry.boss === boss) &&
       (!percentile || entry.percentile === Number(percentile)) &&
-      classNamesToUse.includes(entry.class) &&
+      namesToUse.includes(entryJob) &&
       (!dps_type || entry.dps_type === dps_type)
     );
   });
 }
 
 /**
- * Group filtered data by class and extract date, year, and value.
+ * Normalize job/class selections coming from filters into an array of names.
+ * Prefers jobNames, falls back to classNames for backward compatibility.
+ * @param {Object} filters
+ * @returns {Array<string>}
+ */
+function getSelectedJobNames(filters) {
+  const normalize = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (value instanceof Set) return Array.from(value);
+    return [value];
+  };
+  const jobNamesArray = normalize(filters.jobNames);
+  const legacyClassArray = normalize(filters.classNames);
+  return jobNamesArray.length > 0 ? jobNamesArray : legacyClassArray;
+}
+
+/**
+ * Group filtered data by job and extract date, year, and value.
  * @param {Array<Object>} filtered - Filtered dataset.
  * @returns {Object} Grouped data and set of all raw date strings.
  */
-function groupDataByClass(filtered) {
+function groupDataByJob(filtered) {
   const grouped = {};
   const allDates = new Set();
 
@@ -82,7 +107,8 @@ function groupDataByClass(filtered) {
     const year = dateObj.getFullYear();
     allDates.add(row.date);
 
-    const key = row.class;
+    const jobName = row.job ?? row.class;
+    const key = jobName;
     const y = row.dps ?? row.hps;
 
     if (!grouped[key]) grouped[key] = [];
@@ -92,7 +118,7 @@ function groupDataByClass(filtered) {
       y,
       rawDate: row.date,
       customdata: {
-        class: row.class,
+        class: jobName,
         percentile: row.percentile,
         parses: row.parses,
         dps_type: row.dps_type ?? null,
@@ -104,9 +130,9 @@ function groupDataByClass(filtered) {
   const allDateArr = Array.from(allDates);
   const fullDates = getFullDateRange(allDateArr);
 
-  // 2. Interpolate for each class (simple: carry last value forward)
+  // 2. Interpolate for each job (simple: carry last value forward)
   /**
-   * For each class, create an array of points for all X-axis dates.
+   * For each job, create an array of points for all X-axis dates.
    * If a point exists for a date, include it; if not, insert a null for y-value.
    * This makes Plotly connect only actual data points and leaves gaps at missing days.
    */
@@ -158,7 +184,7 @@ function prepareTraces(grouped, isDPS) {
     // For HPS: plot as-is, both composite and individual lines
     const traceX = sortedPoints.map((p) => p.x);
     const traceY = isDPS
-      ? sortedPoints.map((p) => getAdjustedValueForClass(key, p.y))
+      ? sortedPoints.map((p) => getAdjustedValueForJob(key, p.y))
       : sortedPoints.map((p) => p.y);
     const traceCustom = sortedPoints.map((p) => [
       p.customdata.class, // original class (composite or single)
@@ -166,12 +192,12 @@ function prepareTraces(grouped, isDPS) {
       p.customdata.percentile,
       p.customdata.dps_type,
       p.y, // raw value
-      isDPS ? getAdjustedValueForClass(key, p.y) : p.y, // adjusted value for DPS (halved if composite)
-      getDisplayLabelForClass(key), // legend/label
+      isDPS ? getAdjustedValueForJob(key, p.y) : p.y, // adjusted value for DPS (halved if composite)
+      getDisplayLabelForJob(key), // legend/label
       toISODate(p.rawDate), // 7: ISO date string (e.g. "2024-06-08")
     ]);
 
-    logger.debug(`Trace for class ${key}:`);
+    logger.debug(`Trace for job ${key}:`);
     traceX.forEach((xVal, i) => {
       logger.debug(
         `  Data point ${i + 1}: x=${xVal}, y=${
@@ -183,7 +209,7 @@ function prepareTraces(grouped, isDPS) {
     const trace = {
       type: "scatter",
       mode: "lines+markers",
-      name: getDisplayLabelForClass(key),
+      name: getDisplayLabelForJob(key),
       x: traceX,
       y: traceY,
       customdata: traceCustom,
@@ -206,7 +232,7 @@ function prepareTraces(grouped, isDPS) {
         `,
       connectgaps: true,
     };
-    const color = getClassColor(key);
+    const color = getJobColor(key);
     trace.line = { color };
     trace.marker = { color };
     return trace;
@@ -308,12 +334,11 @@ export function renderFilteredLineChart(
     // 1. Plot all individual healers (expand pairs into individuals)
     const individualRows = applyFilters(data, filters, true);
     // 2. Plot all paired healers (match exact paired names in selection)
-    const pairedNames = filters.classNames.filter((n) =>
-      parsePairedHealerClasses(n)
-    );
+    const selectedNames = getSelectedJobNames(filters);
+    const pairedNames = selectedNames.filter((n) => parsePairedHealerJobs(n));
     let pairedRows = [];
     if (pairedNames.length > 0) {
-      const pairedFilters = { ...filters, classNames: pairedNames };
+      const pairedFilters = { ...filters, jobNames: pairedNames };
       pairedRows = applyFilters(data, pairedFilters, false);
     }
     // Merge and dedup rows so we don't double plot if data is the same
@@ -322,7 +347,7 @@ export function renderFilteredLineChart(
 
   logger.debug(`Filtered data count: ${filtered.length}`);
 
-  const { grouped, allDates } = groupDataByClass(filtered);
+  const { grouped, allDates } = groupDataByJob(filtered);
 
   const sortedDates = Array.from(allDates).sort(
     (a, b) => parseCompactDate(a) - parseCompactDate(b)
@@ -370,23 +395,25 @@ export function renderComparisonLineChart(
   comparePercentiles
 ) {
   const isDPS = titleSuffix.toLowerCase().includes("dps");
-  const classNamesToUse = isDPS
-    ? filters.classNames
-    : expandSelectedClasses(filters.classNames);
+  const selectedNames = getSelectedJobNames(filters);
+  const jobNamesToUse = isDPS
+    ? selectedNames
+    : expandSelectedJobs(selectedNames);
 
-  // Organize input into: { class -> { date -> { percentile -> value } } }
-  const byClassDate = {};
+  // Organize input into: { job -> { date -> { percentile -> value } } }
+  const byJobDate = {};
 
   data.forEach((row) => {
+    const rowJob = row.job ?? row.class;
     if (!filters.raid || row.raid === filters.raid) {
       if (!filters.boss || row.boss === filters.boss) {
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
-          if (classNamesToUse.includes(row.class)) {
-            if (!byClassDate[row.class]) byClassDate[row.class] = {};
-            if (!byClassDate[row.class][row.date])
-              byClassDate[row.class][row.date] = {};
-            byClassDate[row.class][row.date][row.percentile] = isDPS
-              ? getAdjustedValueForClass(row.class, row.dps ?? row.hps)
+          if (jobNamesToUse.includes(rowJob)) {
+            if (!byJobDate[rowJob]) byJobDate[rowJob] = {};
+            if (!byJobDate[rowJob][row.date])
+              byJobDate[rowJob][row.date] = {};
+            byJobDate[rowJob][row.date][row.percentile] = isDPS
+              ? getAdjustedValueForJob(rowJob, row.dps ?? row.hps)
               : row.dps ?? row.hps;
           }
         }
@@ -395,14 +422,14 @@ export function renderComparisonLineChart(
   });
 
   // --- Build a complete date range (no missing dates) ---
-  const allDatesRaw = Object.values(byClassDate).flatMap((obj) =>
+  const allDatesRaw = Object.values(byJobDate).flatMap((obj) =>
     Object.keys(obj)
   );
   const dateList = getFullDateRange(allDatesRaw);
 
   // --- Build traces for each class/percentile, filling missing dates by interpolation (carry-forward) ---
   const traces = [];
-  for (const className in byClassDate) {
+  for (const jobName in byJobDate) {
     comparePercentiles.forEach((cmp) => {
       const x = [];
       const y = [];
@@ -411,7 +438,7 @@ export function renderComparisonLineChart(
       let lastCmpVal = null;
 
       for (const date of dateList) {
-        const pObj = byClassDate[className][date] || {};
+        const pObj = byJobDate[jobName][date] || {};
         const refVal = pObj[referencePercentile];
         const cmpVal = pObj[cmp];
         // Only plot if BOTH percentiles exist for this date
@@ -424,7 +451,7 @@ export function renderComparisonLineChart(
               ? Number((((cmpVal - refVal) / refVal) * 100).toFixed(2))
               : 0;
           custom.push([
-            getDisplayLabelForClass(className),
+            getDisplayLabelForJob(jobName),
             `${getOrdinal(referencePercentile)}`,
             Math.round(refVal),
             `${getOrdinal(cmp)}`,
@@ -449,7 +476,7 @@ export function renderComparisonLineChart(
       const trace = {
         type: "scatter",
         mode: "lines+markers",
-        name: `${getDisplayLabelForClass(className)} (${getOrdinal(
+        name: `${getDisplayLabelForJob(jobName)} (${getOrdinal(
           cmp
         )} vs ${getOrdinal(referencePercentile)})`,
         x: xSorted.map((d) => {
@@ -467,7 +494,7 @@ export function renderComparisonLineChart(
           `<extra></extra>`,
         connectgaps: true,
       };
-      const color = getClassColor(className);
+      const color = getJobColor(jobName);
       trace.line = { color };
       trace.marker = { color };
       traces.push(trace);
@@ -495,17 +522,17 @@ export function renderComparisonLineChart(
 }
 
 /**
- * Expands an array of selected class names, replacing any paired/composite names
- * with their constituent classes. For example, "White Mage+Sage" becomes ["White Mage", "Sage"].
+ * Expands an array of selected job names, replacing any paired/composite names
+ * with their constituent jobs. For example, "White Mage+Sage" becomes ["White Mage", "Sage"].
  * Non-paired names are included as-is.
  *
- * @param {Array<string>} classNames - The class names selected (may include paired/composite).
- * @returns {Array<string>} Expanded list of class names for data filtering.
+ * @param {Array<string>} jobNames - The job names selected (may include paired/composite).
+ * @returns {Array<string>} Expanded list of job names for data filtering.
  */
-function expandSelectedClasses(classNames) {
+function expandSelectedJobs(jobNames) {
   const expanded = new Set();
-  for (const name of classNames) {
-    const parts = parsePairedHealerClasses(name);
+  for (const name of jobNames) {
+    const parts = parsePairedHealerJobs(name);
     if (parts) {
       parts.forEach((p) => expanded.add(p));
     } else {
@@ -516,7 +543,7 @@ function expandSelectedClasses(classNames) {
 }
 
 /**
- * Merges two arrays of data objects and removes duplicates based on class/date/percentile.
+ * Merges two arrays of data objects and removes duplicates based on job/date/percentile.
  * @param {Array<Object>} arr1
  * @param {Array<Object>} arr2
  * @returns {Array<Object>}
@@ -525,7 +552,8 @@ function mergeAndDedup(arr1, arr2) {
   const seen = new Set();
   const result = [];
   for (const row of [...arr1, ...arr2]) {
-    const key = `${row.class}|${row.date}|${row.percentile}`;
+    const jobName = row.job ?? row.class;
+    const key = `${jobName}|${row.date}|${row.percentile}`;
     if (!seen.has(key)) {
       seen.add(key);
       result.push(row);
@@ -667,22 +695,22 @@ function blendHexColors(colorA, colorB) {
 }
 
 /**
- * Returns the color for a given class or paired class.
- * 1) Try CLASS_COLORS.
- * 2) If not found, expand class name and blend their colors if both found.
+ * Returns the color for a given job or paired job.
+ * 1) Try JOB_COLORS.
+ * 2) If not found, expand job name and blend their colors if both found.
  * 3) Else, generate a random color.
- * @param {string} className
+ * @param {string} jobName
  * @returns {string} Hex color.
  */
-function getClassColor(className) {
-  if (CLASS_COLORS[className]) {
-    return CLASS_COLORS[className];
+function getJobColor(jobName) {
+  if (JOB_COLORS[jobName]) {
+    return JOB_COLORS[jobName];
   }
   // Try expanding paired healers and blending
-  const parts = parsePairedHealerClasses(className);
+  const parts = parsePairedHealerJobs(jobName);
   if (parts && parts.length === 2) {
-    const colorA = CLASS_COLORS[parts[0]];
-    const colorB = CLASS_COLORS[parts[1]];
+    const colorA = JOB_COLORS[parts[0]];
+    const colorB = JOB_COLORS[parts[1]];
     if (colorA && colorB) {
       return blendHexColors(colorA, colorB);
     }
