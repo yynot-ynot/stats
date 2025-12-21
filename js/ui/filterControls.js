@@ -12,21 +12,30 @@ import {
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("filterControls");
 
+// Module-level cache storing every boss option and the raid -> bosses lookup to support dependent dropdowns.
+let bossIndexCache = {
+  bossesByRaid: {},
+  allBosses: new Set(),
+};
+
 /**
- * Populate a <select> dropdown element with sorted values and initialize its state.
- * @param {HTMLSelectElement} selectElement - The <select> element to populate.
- * @param {Set<string>} valueSet - A Set of unique values.
- * @param {string} label - Label used if "All" option is added.
+ * Sort a raw array of dropdown values using the appropriate override for the given DOM id.
+ * When a custom order override exists it wins outright, otherwise the helper optionally
+ * applies date-aware ordering before falling back to simple alphabetical sorting.
+ *
+ * The helper is intentionally exported so the ordering rules can be unit tested without a DOM.
+ *
+ * @param {Array<string>} values - Raw option labels collected from the dataset.
+ * @param {string} selectId - DOM id of the <select>, used to look up overrides.
+ * @param {Object<string, string>} [latestDateMap] - Map of label -> most recent YYYYMMDD string.
+ * @returns {Array<string>} Newly sorted copy of the supplied values.
  */
-export function populateDropdown(selectElement, valueSet, label) {
-  if (!selectElement) return;
+export function sortDropdownValues(values, selectId, latestDateMap) {
+  const sortedValues = [...values];
 
-  const values = Array.from(valueSet);
-  const id = selectElement.id;
-
-  const customOrder = ORDER_OVERRIDES[id];
+  const customOrder = ORDER_OVERRIDES[selectId];
   if (customOrder) {
-    values.sort((a, b) => {
+    sortedValues.sort((a, b) => {
       const aIndex = customOrder.findIndex(
         (v) => v.toLowerCase() === a.toLowerCase()
       );
@@ -38,9 +47,65 @@ export function populateDropdown(selectElement, valueSet, label) {
       if (bIndex !== -1) return 1;
       return a.localeCompare(b);
     });
+  } else if (latestDateMap) {
+    sortedValues.sort((a, b) => {
+      const dateA = latestDateMap?.[a] ?? "";
+      const dateB = latestDateMap?.[b] ?? "";
+      if (dateA === dateB) {
+        return a.localeCompare(b);
+      }
+      return dateB.localeCompare(dateA);
+    });
   } else {
-    values.sort();
+    sortedValues.sort();
   }
+
+  return sortedValues;
+}
+
+/**
+ * Build a lookup table mapping each raid to the bosses observed in the data and track the full boss set.
+ * This powers the dependent boss dropdown so we can instantly repopulate the boss list when the raid changes
+ * without issuing new fetches.
+ *
+ * @param {Array<Object>} data - Full dataset rows containing { raid, boss } pairs.
+ * @returns {{bossesByRaid: Object<string, Set<string>>, allBosses: Set<string>}} Aggregated lookup.
+ */
+export function buildBossIndex(data) {
+  const bossesByRaid = {};
+  const allBosses = new Set();
+
+  data.forEach((entry) => {
+    if (!entry?.boss) return;
+    allBosses.add(entry.boss);
+    if (!entry.raid) return;
+
+    if (!bossesByRaid[entry.raid]) {
+      bossesByRaid[entry.raid] = new Set();
+    }
+    bossesByRaid[entry.raid].add(entry.boss);
+  });
+
+  return { bossesByRaid, allBosses };
+}
+
+/**
+ * Populate a <select> dropdown element with sorted values and initialize its state.
+ * The helper first delegates ordering to `sortDropdownValues`, then renders <option> nodes
+ * and pushes the initial selection into the shared filter state.
+ *
+ * @param {HTMLSelectElement} selectElement - The <select> element to populate.
+ * @param {Set<string>} valueSet - A Set of unique values.
+ * @param {string} label - Label used if "All" option is added.
+ * @param {Object} [options] - Optional configuration overrides.
+ * @param {Object<string, string>} [options.latestDateMap] - Map of item -> latest YYYYMMDD date for sorting.
+ */
+export function populateDropdown(selectElement, valueSet, label, options = {}) {
+  if (!selectElement) return;
+
+  const id = selectElement.id;
+  const { latestDateMap } = options;
+  const values = sortDropdownValues(Array.from(valueSet), id, latestDateMap);
 
   selectElement.innerHTML = "";
 
@@ -78,28 +143,30 @@ export function populateDropdown(selectElement, valueSet, label) {
     selectElement.selectedIndex = 0;
   }
 
-  // Immediately push initial value to centralized state
   const mappedKey = mapSelectIdToFilterKey(id);
-  if (MULTI_SELECTS.includes(id)) {
-    const selectedSet = new Set(
-      [...selectElement.selectedOptions].map((o) => o.value)
-    );
-    updateFilterValue(mappedKey, selectedSet);
-  } else {
-    updateFilterValue(mappedKey, selectElement.value);
-  }
+  const isMultiSelect = MULTI_SELECTS.includes(id);
 
-  // Attach centralized update handler on change
-  selectElement.addEventListener("change", (e) => {
-    if (MULTI_SELECTS.includes(id)) {
-      const selected = new Set(
+  const pushCurrentSelection = () => {
+    if (!mappedKey) return;
+    if (isMultiSelect) {
+      const selectedSet = new Set(
         [...selectElement.selectedOptions].map((o) => o.value)
       );
-      updateFilterValue(mappedKey, selected);
+      updateFilterValue(mappedKey, selectedSet);
     } else {
       updateFilterValue(mappedKey, selectElement.value);
     }
-  });
+  };
+
+  // Immediately push initial value to centralized state
+  pushCurrentSelection();
+
+  // Attach centralized update handler on change (guard to avoid stacking duplicates on re-population)
+  if (!selectElement.__filterControlsChangeHandler) {
+    const handler = () => pushCurrentSelection();
+    selectElement.addEventListener("change", handler);
+    selectElement.__filterControlsChangeHandler = handler;
+  }
 }
 
 /**
@@ -119,7 +186,9 @@ function mapSelectIdToFilterKey(id) {
 }
 
 /**
- * Setup header dropdown behavior using centralized state (no direct DOM triggers).
+ * Wire the raid and boss headers up to their underlying <select> elements so clicking the
+ * headers toggles the dropdown content while the true <select> stays hidden for accessibility.
+ * This keeps a single source of truth (the <select>) and mirrors its value back into the titles.
  */
 export function setupHeaderBindings() {
   const raidSelect = document.getElementById("raid-select");
@@ -146,21 +215,38 @@ export function setupHeaderBindings() {
 }
 
 /**
- * Populate all dropdown filters using the provided dataset.
- * Sets the default for Reference Percentile to 50 and for Comparison Percentiles to [25, 75] if they exist.
+ * Populate every dropdown filter from the decompressed dataset snapshot.
+ * The raid dropdown receives an additional recency-aware ordering map so the newest raids float
+ * to the top, while other dropdowns rely on alphabetical or explicit overrides as appropriate.
+ *
  * @param {Array<Object>} data - Array of all loaded entries.
  */
 export function populateAllFilters(data) {
+  // Track each raid's most recent date so the dropdown can surface the newest content first.
+  const raidLatestDates = {};
+  data.forEach((entry) => {
+    if (!entry.raid || !entry.date) return;
+    const currentLatest = raidLatestDates[entry.raid];
+    if (!currentLatest || entry.date > currentLatest) {
+      raidLatestDates[entry.raid] = entry.date;
+    }
+  });
+
+  bossIndexCache = buildBossIndex(data);
+
   const raids = new Set(data.map((d) => d.raid));
-  const bosses = new Set(data.map((d) => d.boss));
+  const bosses = bossIndexCache.allBosses;
   const percentiles = new Set(data.map((d) => d.percentile));
   const classes = new Set(data.map((d) => d.class));
   const dpsTypes = new Set(
     data.filter((d) => d.dps_type).map((d) => d.dps_type)
   );
 
-  populateDropdown(document.getElementById("raid-select"), raids, "Raid");
+  populateDropdown(document.getElementById("raid-select"), raids, "Raid", {
+    latestDateMap: raidLatestDates,
+  });
   populateDropdown(document.getElementById("boss-select"), bosses, "Boss");
+  setupRaidBossFiltering();
 
   setupPercentileSlider(percentiles);
   setupReferencePercentileSlider(percentiles);
@@ -177,6 +263,8 @@ export function populateAllFilters(data) {
 
 /**
  * Populate a custom dropdown visual container.
+ * Used by the faux headers so the actual select element can remain hidden while still receiving events.
+ *
  * @param {HTMLSelectElement} selectEl - The <select> element.
  * @param {HTMLElement} dropdownEl - The dropdown container.
  * @param {HTMLElement} titleEl - The header element.
@@ -198,7 +286,52 @@ function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
 }
 
 /**
+ * Retrieve the boss Set for the provided raid, falling back to the full catalog if no raid is selected.
+ * @param {string} raid - Current raid selection.
+ * @returns {Set<string>} Boss option set for dropdown population.
+ */
+function getBossSetForRaid(raid) {
+  if (raid && bossIndexCache.bossesByRaid[raid]) {
+    return bossIndexCache.bossesByRaid[raid];
+  }
+  return bossIndexCache.allBosses;
+}
+
+/**
+ * Keep the boss dropdown synchronized with the currently selected raid.
+ * When the player changes raids we rebuild the boss options so only relevant bosses are surfaced.
+ */
+function setupRaidBossFiltering() {
+  const raidSelect = document.getElementById("raid-select");
+  const bossSelect = document.getElementById("boss-select");
+  if (!raidSelect || !bossSelect) return;
+
+  const applyBossFilter = () => {
+    const bossesForRaid = getBossSetForRaid(raidSelect.value);
+    populateDropdown(bossSelect, bossesForRaid, "Boss");
+
+    const bossTitle = document.getElementById("boss-subheader");
+    if (bossTitle) {
+      bossTitle.textContent = bossSelect.value || "[Select Boss]";
+    }
+    const bossDropdown = document.getElementById("boss-dropdown");
+    bossDropdown?.classList.add("hidden-dropdown");
+  };
+
+  if (raidSelect.__bossFilterHandler) {
+    raidSelect.removeEventListener("change", raidSelect.__bossFilterHandler);
+  }
+
+  raidSelect.__bossFilterHandler = applyBossFilter;
+  raidSelect.addEventListener("change", applyBossFilter);
+
+  applyBossFilter();
+}
+
+/**
  * Setup single header dropdown behavior (for raid and boss headers).
+ * Connects the faux title to the hidden select and keeps the dropdown in sync with selections.
+ *
  * @param {HTMLSelectElement} selectEl - The <select> element.
  * @param {HTMLElement} titleEl - The clickable title/header.
  * @param {HTMLElement} dropdownEl - The dropdown container.
