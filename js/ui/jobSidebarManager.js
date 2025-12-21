@@ -414,6 +414,8 @@ export function setupJobSidebar(jobList) {
       labelContainer,
       updateSidebarLabelVisibility
     );
+    // Ensure auto-collapse stays disabled until the first job selection occurs.
+    collapseHelpers.setAutoCollapseEnabled(false);
 
     // Initial label visibility on load
     updateSidebarLabelVisibility();
@@ -423,7 +425,13 @@ export function setupJobSidebar(jobList) {
   subscribeToFilterChanges((state) => {
     if (!sidebar || !labelContainer) return;
     // Open sidebar if no jobs are selected
-    if (state.selectedJobs && state.selectedJobs.size === 0) {
+    const hasSelection =
+      state.selectedJobs && state.selectedJobs.size > 0 ? true : false;
+    if (collapseHelpers) {
+      collapseHelpers.setAutoCollapseEnabled(hasSelection);
+    }
+
+    if (!hasSelection) {
       collapseHelpers && collapseHelpers.expandSidebar();
       logger.info("No job selected: expanding the job sidebar.");
     } else {
@@ -504,10 +512,38 @@ function setupSidebarCollapseHandlers(
   labelContainer,
   updateLabelVisibility
 ) {
+  // Auto-collapse only kicks in after a user has picked at least one job.
+  let autoCollapseEnabled = false;
+
+  /**
+   * Determine whether passive collapse actions are allowed.
+   * Keeping this off ensures the sidebar remains visible until the user
+   * intentionally interacts with the job grid for the first time.
+   * @returns {boolean}
+   */
+  function shouldAutoCollapse() {
+    return autoCollapseEnabled;
+  }
+
+  /**
+   * Enables/disables passive collapse triggers (scroll, outside click, etc.).
+   * When disabled, the sidebar is forced open so the user keeps seeing the grid.
+   * @param {boolean} enabled
+   */
+  function setAutoCollapseEnabled(enabled) {
+    autoCollapseEnabled = Boolean(enabled);
+    if (!autoCollapseEnabled) {
+      expandSidebar();
+    }
+  }
+
   /**
    * Collapse the sidebar by adding the 'collapsed' job.
    */
-  function collapseSidebar() {
+  function collapseSidebar({ force = false } = {}) {
+    if (!force && !shouldAutoCollapse()) {
+      return;
+    }
     sidebar.classList.add("collapsed");
     if (updateLabelVisibility) updateLabelVisibility();
   }
@@ -554,7 +590,6 @@ function setupSidebarCollapseHandlers(
 
   sidebar.addEventListener("mouseleave", () => {
     mouseOverSidebar = false;
-    // Collapse only if sidebar is open and the mouse just left
     if (!isCollapsed()) {
       collapseSidebar();
     }
@@ -579,7 +614,8 @@ function setupSidebarCollapseHandlers(
     if (
       !isCollapsed() &&
       !sidebar.contains(event.target) &&
-      event.target !== labelContainer
+      event.target !== labelContainer &&
+      shouldAutoCollapse()
     ) {
       collapseSidebar();
     }
@@ -591,7 +627,7 @@ function setupSidebarCollapseHandlers(
     function () {
       const mouseElement = document.elementFromPoint(mouseX, mouseY);
 
-      if (!isCollapsed() && !mouseOverSidebar) {
+      if (!isCollapsed() && !mouseOverSidebar && shouldAutoCollapse()) {
         logger.info(
           "[Sidebar] Collapsing sidebar due to window scroll and mouse not over sidebar."
         );
@@ -631,7 +667,7 @@ function setupSidebarCollapseHandlers(
     "touchmove",
     function (e) {
       // Only handle the first touchmove after a touchstart
-      if (!touchStarted) return;
+      if (!touchStarted || !shouldAutoCollapse()) return;
       touchStarted = false;
 
       if (!isCollapsed() && !touchScrollStartedInsideSidebar) {
@@ -645,5 +681,14 @@ function setupSidebarCollapseHandlers(
   );
 
   // Return helper functions for use in setupJobSidebar or elsewhere
-  return { collapseSidebar, expandSidebar, toggleSidebar, isCollapsed };
+  return {
+    collapseSidebar,
+    expandSidebar,
+    toggleSidebar,
+    isCollapsed,
+    setAutoCollapseEnabled,
+  };
 }
+
+// Exported for testing auto-collapse behavior.
+export { setupSidebarCollapseHandlers };
