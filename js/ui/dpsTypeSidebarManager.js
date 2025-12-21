@@ -2,6 +2,7 @@ import {
   updateFilterValue,
   subscribeToFilterChanges,
 } from "../shared/filterState.js";
+import { DEFAULTS } from "../config/appConfig.js";
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("dpsTypeSidebarManager");
 
@@ -29,20 +30,28 @@ export function setupDpsTypeSidebarManager(dpsTypeOptions) {
   // Debug log: List all available DPS Types
   logger.debug(`Available DPS Types: ${dpsTypeOptions.join(", ")}`);
 
+  const configuredDefault = DEFAULTS["dps-type-select"];
+  const hasConfiguredDefault =
+    typeof configuredDefault === "string" &&
+    dpsTypeOptions.includes(configuredDefault);
+  const defaultType = hasConfiguredDefault
+    ? configuredDefault
+    : dpsTypeOptions[0];
+
   // Clear out any old options in <select>
   select.innerHTML = "";
 
   // Populate select with all available DPS Type options
-  dpsTypeOptions.forEach((option, i) => {
+  dpsTypeOptions.forEach((option) => {
     const opt = document.createElement("option");
     opt.value = option;
     opt.textContent = option;
-    if (i === 0) opt.selected = true;
+    if (option === defaultType) opt.selected = true;
     select.appendChild(opt);
   });
 
   // Set default state and visible label
-  const defaultType = dpsTypeOptions[0];
+  select.value = defaultType;
   updateFilterValue("selectedDpsType", defaultType);
   selectedLabel.textContent = defaultType;
 
