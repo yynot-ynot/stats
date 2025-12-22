@@ -313,6 +313,7 @@ function setupRaidBossFiltering() {
     const bossTitle = document.getElementById("boss-subheader");
     if (bossTitle) {
       bossTitle.textContent = bossSelect.value || "[Select Boss]";
+      bossTitle.__updateDropdownInteractivity?.();
     }
     const bossDropdown = document.getElementById("boss-dropdown");
     bossDropdown?.classList.add("hidden-dropdown");
@@ -337,15 +338,23 @@ function setupRaidBossFiltering() {
  * @param {HTMLElement} dropdownEl - The dropdown container.
  */
 function setupSingleHeaderBehavior(selectEl, titleEl, dropdownEl) {
-  const options = [...selectEl.options];
-  if (options.length <= 1) {
-    titleEl.classList.add("non-interactive");
-    return;
-  } else {
-    titleEl.classList.remove("non-interactive");
-  }
+  const updateInteractivity = () => {
+    if (selectEl.options.length <= 1) {
+      titleEl.classList.add("non-interactive");
+      dropdownEl?.classList.add("hidden-dropdown");
+    } else {
+      titleEl.classList.remove("non-interactive");
+    }
+  };
 
-  titleEl.addEventListener("click", (e) => {
+  // expose so other helpers (e.g., raid->boss filtering) can refresh when options change
+  titleEl.__updateDropdownInteractivity = updateInteractivity;
+  updateInteractivity();
+
+  if (titleEl.__dropdownClickHandler) return;
+
+  const clickHandler = (e) => {
+    if (selectEl.options.length <= 1) return; // nothing to show
     e.stopPropagation();
     document.querySelectorAll(".custom-dropdown").forEach((d) => {
       if (d !== dropdownEl) {
@@ -354,5 +363,8 @@ function setupSingleHeaderBehavior(selectEl, titleEl, dropdownEl) {
     });
     populateCustomDropdown(selectEl, dropdownEl, titleEl);
     dropdownEl.classList.toggle("hidden-dropdown");
-  });
+  };
+
+  titleEl.addEventListener("click", clickHandler);
+  titleEl.__dropdownClickHandler = clickHandler;
 }
