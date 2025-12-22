@@ -848,11 +848,18 @@ th {
   z-index: 4;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s;
+  transition: opacity 0.18s, transform 0.18s, color 0.18s;
 }
 
 .slider-tick-label.visible {
   opacity: 1;
+}
+
+.slider-tick-label.preview {
+  font-size: 1.05em;
+  color: #fff;
+  transform: translateX(-50%) scale(1.15);
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.55);
 }
 
 #reference-percentile-container .slider-tick-label {

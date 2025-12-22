@@ -7,6 +7,18 @@ import {
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("chartRenderer");
 
+// Shared layout margins so annotations can compensate for asymmetric spacing.
+const BASE_CHART_MARGINS = Object.freeze({
+  t: 60,
+  l: 50,
+  r: 65,
+  b: 90,
+});
+// Offset applied to the single-year annotation so it visually centers with the plot
+// once the y-axis title and left margin push the plotting area right.
+const SINGLE_YEAR_ANNOTATION_SHIFT =
+  (BASE_CHART_MARGINS.l - BASE_CHART_MARGINS.r) / 2;
+
 /**
  * Helper to get ordinal suffix for a number (e.g., 1st, 2nd, 3rd, 4th, etc.)
  * @param {number} n
@@ -52,12 +64,7 @@ function parseCompactDate(dateStr) {
  * @returns {Array<Object>} Filtered dataset.
  */
 function applyFilters(data, filters, expandPairs = false) {
-  const {
-    raid,
-    boss,
-    percentile,
-    dps_type,
-  } = filters;
+  const { raid, boss, percentile, dps_type } = filters;
   const selectedNames = getSelectedJobNames(filters);
   const namesToUse = expandPairs
     ? expandSelectedJobs(selectedNames)
@@ -249,7 +256,8 @@ function prepareTraces(grouped, isDPS) {
  * @param {Array<string>} sortedDateLabels - Corresponding "M/D" formatted labels (e.g., "4/1").
  * @returns {Array<Object>} Plotly annotation objects to display below the x-axis.
  */
-function generateYearAnnotations(sortedDates, sortedDateLabels) {
+function generateYearAnnotations(sortedDates, sortedDateLabels, options = {}) {
+  const { singleYearXShift = 0 } = options; // pixel shift for single-year center alignment
   const yearToIndices = {};
 
   // Build a mapping from year → list of indices where that year occurs
@@ -278,6 +286,7 @@ function generateYearAnnotations(sortedDates, sortedDateLabels) {
         text: `<b>${Object.keys(yearToIndices)[0]}</b>`,
         showarrow: false,
         font: { size: 14 },
+        xshift: singleYearXShift, // nudge label back toward optical center
       },
     ];
   }
@@ -355,7 +364,15 @@ export function renderFilteredLineChart(
   const sortedDateLabels = getDateLabels(sortedDates);
 
   const traces = prepareTraces(grouped, isDPS);
-  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
+  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
+    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+  });
+
+  const percentileSuffix =
+    filters?.percentile && !isNaN(Number(filters.percentile))
+      ? `  @ ${Number(filters.percentile)} %`
+      : "";
+  const yAxisTitle = `${titleSuffix || "Output"}${percentileSuffix}`;
 
   // Find x labels to show every 7 days, starting from first
   const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
@@ -365,9 +382,9 @@ export function renderFilteredLineChart(
     traces,
     container,
     sortedDateLabels,
-    `Output Over Time${titleSuffix ? ` (${titleSuffix})` : ""}`,
+    titleSuffix || "Output",
     annotations,
-    titleSuffix || "Output"
+    yAxisTitle
   );
 }
 
@@ -410,8 +427,7 @@ export function renderComparisonLineChart(
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
           if (jobNamesToUse.includes(rowJob)) {
             if (!byJobDate[rowJob]) byJobDate[rowJob] = {};
-            if (!byJobDate[rowJob][row.date])
-              byJobDate[rowJob][row.date] = {};
+            if (!byJobDate[rowJob][row.date]) byJobDate[rowJob][row.date] = {};
             byJobDate[rowJob][row.date][row.percentile] = isDPS
               ? getAdjustedValueForJob(rowJob, row.dps ?? row.hps)
               : row.dps ?? row.hps;
@@ -509,7 +525,9 @@ export function renderComparisonLineChart(
   const ticktext = tickvals;
 
   // Year annotation(s)
-  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels);
+  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
+    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+  });
 
   plotChartWithLayout(
     traces,
@@ -628,11 +646,16 @@ function plotChartWithLayout(
       i % 7 === 0 ? `${label} (wk${Math.floor(i / 7) + 1})` : null
     )
     .filter((v) => v !== null);
+  const layoutMargin = { ...BASE_CHART_MARGINS };
 
   const layout = {
-    title,
+    title: {
+      text: title,
+      font: {
+        size: 20,
+      },
+    },
     xaxis: {
-      title: { text: "Date", standoff: 30 },
       type: "category",
       categoryorder: "array",
       categoryarray: sortedDateLabels,
@@ -644,11 +667,15 @@ function plotChartWithLayout(
       tickfont: { color: "#CCCCCC" }, // Lighter tick labels
     },
     yaxis: {
-      title: yAxisTitle,
+      title: {
+        text: yAxisTitle,
+        standoff: 25, // push axis title farther from ticks without shifting axis line
+      },
+      automargin: true, // allow Plotly to honor axis title standoff without moving the axis
       fixedrange: fixedRange,
       gridcolor: "#444444", // Medium-dark grid lines
     },
-    margin: { t: 60, l: 50, r: 30, b: 90 },
+    margin: layoutMargin,
     annotations,
     showlegend: false,
     paper_bgcolor: "#181A1B", // Nearly black/dark gray (matches Brave's dark)

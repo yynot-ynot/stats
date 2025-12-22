@@ -98,8 +98,18 @@ function updateChart(state) {
   logger.debug(`DPS Data Size: ${dpsData.length}`);
   logger.debug(`Healing Data Size: ${healingData.length}`);
 
+  const dpsMetricTitle =
+    selectedDpsType && selectedDpsType !== "All"
+      ? formatDpsMetricTitle(selectedDpsType)
+      : "DPS";
+
   import(`../ui/chartRenderer.js`).then(({ renderFilteredLineChart }) => {
-    renderFilteredLineChart(dpsData, dpsFilters, dpsContainer, "DPS");
+    renderFilteredLineChart(
+      dpsData,
+      dpsFilters,
+      dpsContainer,
+      dpsMetricTitle
+    );
     renderFilteredLineChart(
       healingData,
       healingFilters,
@@ -107,6 +117,18 @@ function updateChart(state) {
       "Healing"
     );
   });
+}
+
+/**
+ * Convert a raw DPS metric id (e.g., "rdps") into the mixed-case label required by the UI.
+ * Keeps the first character lowercase and uppercases the remainder (-> "rDPS").
+ * @param {string} metric
+ * @returns {string}
+ */
+function formatDpsMetricTitle(metric) {
+  if (!metric) return "DPS";
+  if (metric.length === 1) return metric.toLowerCase();
+  return `${metric[0].toLowerCase()}${metric.slice(1).toUpperCase()}`;
 }
 
 /**

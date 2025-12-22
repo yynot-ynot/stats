@@ -257,7 +257,7 @@ function initPercentileSliderUI({
     const closest = findClosestPercentile(value, percentiles);
     const idx = percentiles.indexOf(closest);
     updateCustomThumbByValue(value, percentiles, positions, thumb); // Move thumb visually to current value
-    highlightTickAndLabel(idx, overlay); // Optionally show a preview
+    highlightTickAndLabel(idx, overlay, true); // Optionally show a preview
   });
 
   // On change: snap to nearest allowed percentile, update state
@@ -303,7 +303,7 @@ function updateCustomThumbByValue(value, percentiles, positions, thumb) {
 /**
  * Highlight tick and label overlays for the closest percentile.
  */
-function highlightTickAndLabel(idx, overlay) {
+function highlightTickAndLabel(idx, overlay, isPreview = false) {
   const allTicks = overlay.querySelectorAll(".slider-tick");
   const allLabels = overlay.querySelectorAll(".slider-tick-label");
   allTicks.forEach((tick, i) => {
@@ -311,5 +311,6 @@ function highlightTickAndLabel(idx, overlay) {
   });
   allLabels.forEach((lbl, i) => {
     lbl.classList.toggle("visible", i === idx);
+    lbl.classList.toggle("preview", isPreview && i === idx);
   });
 }
