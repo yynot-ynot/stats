@@ -31,6 +31,18 @@ function getOrdinal(n) {
 }
 
 /**
+ * Convert an ordinal string like "50th" into markup with a superscript suffix.
+ * @param {string} ordinal
+ * @returns {string}
+ */
+function formatOrdinalWithSuperscript(ordinal) {
+  const match = ordinal.match(/^(\d+)(st|nd|rd|th)$/);
+  if (!match) return ordinal;
+  const [, base, suffix] = match;
+  return `${base}<sup>${suffix}</sup>`;
+}
+
+/**
  * Format date string YYYYMMDD to YYYY-MM-DD
  * @param {string} compact - e.g. "20240605"
  * @returns {string}
@@ -368,9 +380,10 @@ export function renderFilteredLineChart(
     singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
   });
 
+  const percentileValue = Number(filters?.percentile);
   const percentileSuffix =
-    filters?.percentile && !isNaN(Number(filters.percentile))
-      ? `  @ ${Number(filters.percentile)} %`
+    filters?.percentile && !isNaN(percentileValue)
+      ? `  @ ${formatOrdinalWithSuperscript(getOrdinal(percentileValue))}`
       : "";
   const yAxisTitle = `${titleSuffix || "Output"}${percentileSuffix}`;
 
