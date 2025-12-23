@@ -6,6 +6,106 @@ body {
   color: #fff;
 }
 
+.view-hidden {
+  display: none !important;
+}
+
+#view-switcher {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+#view-switcher button {
+  background: #232527;
+  border: 1px solid #333;
+  color: #7cc7ff;
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  box-shadow: 0 1px 4px #0007;
+}
+
+#view-switcher button.active {
+  background: #0f3c63;
+  color: #fff;
+  border-color: #4da3ff;
+  box-shadow: 0 0 6px #4da3ff66;
+}
+
+.filter-state-readout {
+  background: #111;
+  border: 1px solid #333;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.percentile-chart-section {
+  margin-top: 1.5rem;
+}
+
+.percentile-chart {
+  min-height: 420px;
+  margin-top: 0.5rem;
+}
+
+.percentile-date-slider {
+  margin: 1rem auto;
+  max-width: 420px;
+  text-align: center;
+}
+
+.percentile-date-slider label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #60aaff;
+  font-weight: 600;
+}
+
+.percentile-date-slider input[type="range"] {
+  width: 100%;
+}
+
+.percentile-date-display {
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.chart-empty-message {
+  padding: 1rem;
+  border: 1px dashed #555;
+  color: #bbb;
+  text-align: center;
+}
+
+.placeholder-selection-heading {
+  margin-top: 0.5rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.placeholder-selection-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  text-align: left;
+  display: inline-block;
+}
+
+.placeholder-selection-list li {
+  margin: 0.15rem 0;
+  color: #ddd;
+}
+
+.placeholder-selection-label {
+  font-weight: 600;
+  color: #fff;
+  margin-right: 0.35rem;
+}
+
 /* Heading Styling */
 h1 {
   margin-top: 0;

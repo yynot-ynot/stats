@@ -1,14 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { setupSidebarCollapseHandlers } from "../js/ui/jobSidebarManager.js";
 
-// Verifies the auto-collapse gating logic on the job sidebar using lightweight DOM stubs.
+import {
+  setupSidebarCollapseHandlers,
+  buildJobSelectionSignature,
+} from "../js/ui/jobSidebarManager.js";
 
-/**
- * Lightweight mock of the DOMTokenList interface so tests can assert on
- * `classList` interactions without needing a real DOM implementation.
- * @returns {{add: Function, remove: Function, toggle: Function, contains: Function}}
- */
 function createClassListStub() {
   const classes = new Set();
   return {
@@ -32,11 +29,6 @@ function createClassListStub() {
   };
 }
 
-/**
- * Build a generic HTMLElement stub that tracks classList and event listeners.
- * Provides `dispatchEvent` helpers so tests can simulate user input.
- * @returns {Object}
- */
 function createElementStub() {
   const listeners = {};
   const classList = createClassListStub();
@@ -57,11 +49,6 @@ function createElementStub() {
   };
 }
 
-/**
- * Install global `document` and `window` stubs so the sidebar manager can
- * register listeners without referencing the real browser APIs.
- * @returns {{documentStub: Object, windowStub: Object, restore: Function}}
- */
 function installDomStubs() {
   const documentListeners = {};
   const windowListeners = {};
@@ -100,7 +87,6 @@ function installDomStubs() {
   };
 }
 
-// Sidebar must ignore collapse calls until gating is turned on.
 test("job sidebar stays open until auto-collapse is enabled", () => {
   const { restore } = installDomStubs();
   const sidebar = createElementStub();
@@ -132,7 +118,6 @@ test("job sidebar stays open until auto-collapse is enabled", () => {
   }
 });
 
-// Turning auto-collapse off after enabling should reopen the panel immediately.
 test("disabling auto-collapse re-expands the sidebar", () => {
   const { restore } = installDomStubs();
   const sidebar = createElementStub();
@@ -160,7 +145,6 @@ test("disabling auto-collapse re-expands the sidebar", () => {
   }
 });
 
-// Outside clicks only collapse once the user has made an initial selection.
 test("document clicks collapse the sidebar only after enabling auto-collapse", () => {
   const { documentStub, restore } = installDomStubs();
   const sidebar = createElementStub();
@@ -199,4 +183,16 @@ test("document clicks collapse the sidebar only after enabling auto-collapse", (
   } finally {
     restore();
   }
+});
+
+test("buildJobSelectionSignature returns empty string for empty selections", () => {
+  assert.equal(buildJobSelectionSignature(null), "");
+  assert.equal(buildJobSelectionSignature(undefined), "");
+  assert.equal(buildJobSelectionSignature([]), "");
+});
+
+test("buildJobSelectionSignature sorts job names deterministically", () => {
+  const setA = new Set(["Paladin", "Warrior", "Dark Knight"]);
+  const arrayB = ["Dark Knight", "Paladin", "Warrior"];
+  assert.equal(buildJobSelectionSignature(setA), buildJobSelectionSignature(arrayB));
 });

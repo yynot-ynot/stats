@@ -1,4 +1,5 @@
 import { parsePairedHealerJobs } from "./jobSidebarManager.js";
+import { buildPercentileSeries } from "../logic/percentileDataUtils.js";
 import { JOB_COLORS } from "../config/appConfig.js";
 import {
   getDisplayLabelForJob,
@@ -18,6 +19,20 @@ const BASE_CHART_MARGINS = Object.freeze({
 // once the y-axis title and left margin push the plotting area right.
 const SINGLE_YEAR_ANNOTATION_SHIFT =
   (BASE_CHART_MARGINS.l - BASE_CHART_MARGINS.r) / 2;
+const MONTH_NAMES = Object.freeze([
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+]);
 
 /**
  * Helper to get ordinal suffix for a number (e.g., 1st, 2nd, 3rd, 4th, etc.)
@@ -51,6 +66,24 @@ function toISODate(compact) {
   return (
     compact.slice(0, 4) + "-" + compact.slice(4, 6) + "-" + compact.slice(6, 8)
   );
+}
+
+/**
+ * Convert an ISO date string (YYYY-MM-DD) into a concise "Mon D, YYYY" label.
+ * Falls back to the raw ISO string if parsing fails so charts still render a title.
+ * @param {string|null} isoDate
+ * @returns {string}
+ */
+function formatIsoDateForTitle(isoDate) {
+  if (!isoDate) return "";
+  const parts = isoDate.split("-");
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  const monthIndex = Number(month) - 1;
+  const monthLabel = MONTH_NAMES[monthIndex] || month;
+  const numericDay = Number(day);
+  const dayLabel = Number.isNaN(numericDay) ? day : numericDay;
+  return `${monthLabel} ${dayLabel}, ${year}`;
 }
 
 /**
@@ -550,6 +583,166 @@ export function renderComparisonLineChart(
     annotations,
     "Difference"
   );
+}
+
+/**
+ * Render the DPS and HPS percentile charts using the most recent date in the dataset.
+ * @param {Object} params
+ * @param {Array<Object>} params.dpsData
+ * @param {Array<Object>} params.hpsData
+ * @param {Object} params.dpsFilters
+ * @param {Object} params.hpsFilters
+ * @param {HTMLElement} params.dpsContainer
+ * @param {HTMLElement} params.hpsContainer
+ * @param {string} params.dpsLabel
+ * @param {string} [params.targetDate] - Preferred YYYYMMDD percentile snapshot to render.
+ * @returns {{renderedAny: boolean, selectedIsoDate: (string|null)}}
+ */
+export function renderPercentileCharts({
+  dpsData,
+  hpsData,
+  dpsFilters,
+  hpsFilters,
+  dpsContainer,
+  hpsContainer,
+  dpsLabel,
+  targetDate,
+}) {
+  const dpsResult = renderSinglePercentileChart({
+    data: dpsData,
+    filters: dpsFilters,
+    container: dpsContainer,
+    valueKey: "dps",
+    metricLabel: dpsLabel || "DPS",
+    targetDate,
+  });
+  hpsContainer.previousElementSibling.textContent = "Healing Percentile";
+  const hpsResult = renderSinglePercentileChart({
+    data: hpsData,
+    filters: hpsFilters,
+    container: hpsContainer,
+    valueKey: "hps",
+    metricLabel: "Healing",
+    targetDate,
+  });
+  dpsContainer.previousElementSibling.textContent = `${
+    dpsLabel || "DPS"
+  } Percentile`;
+  return {
+    renderedAny: dpsResult.rendered || hpsResult.rendered,
+    selectedIsoDate: dpsResult.isoDate || hpsResult.isoDate,
+  };
+}
+
+/**
+ * Render a single percentile chart (either DPS or HPS) for the provided filters.
+ * Builds Plotly traces per job, ensures gaps remain when the percentile bucket is missing,
+ * emits tooltips containing job label, percentile, metric value, and date, and embeds the
+ * rendered ISO date into the Plotly title so the percentile view does not need a separate label.
+ * @param {Object} options
+ * @param {string} [options.targetDate] - Preferred compact date; falls back to most recent snapshot.
+ * @returns {{rendered: boolean, isoDate: (string|null)}}
+ */
+function renderSinglePercentileChart({
+  data,
+  filters,
+  container,
+  valueKey,
+  metricLabel,
+  targetDate,
+}) {
+  if (!container) return { rendered: false, isoDate: null };
+  const { selectedDate, buckets, series } = buildPercentileSeries(
+    data,
+    filters,
+    {
+      valueKey,
+      targetDate,
+    }
+  );
+  const isoDate = selectedDate ? toISODate(selectedDate) : null;
+
+  if (!selectedDate || buckets.length === 0 || series.size === 0) {
+    container.innerHTML = `<div class="chart-empty-message">No ${metricLabel} percentile data available.</div>`;
+    return { rendered: false, isoDate };
+  }
+
+  const minPercentile = Math.min(...buckets);
+  const maxPercentile = Math.max(...buckets);
+  const normalizedStart = Math.max(minPercentile - 3, 0) / 100;
+  const normalizedEnd = Math.min(maxPercentile + 3, 100) / 100;
+  const positions = buckets.map((pct) => pct / 100);
+  const traces = [];
+  series.forEach((percentileMap, jobName) => {
+    const yValues = buckets.map((pct) =>
+      percentileMap.has(pct) ? percentileMap.get(pct) : null
+    );
+    const custom = buckets.map((pct) => [
+      getDisplayLabelForJob(jobName),
+      getOrdinal(pct),
+      pct,
+      isoDate,
+      metricLabel,
+    ]);
+    const color = getJobColor(jobName);
+    traces.push({
+      type: "scatter",
+      mode: "lines+markers",
+      name: getDisplayLabelForJob(jobName),
+      x: positions,
+      y: yValues,
+      customdata: custom,
+      line: { color },
+      marker: { color },
+      connectgaps: false,
+      hovertemplate:
+        `Job: %{customdata[0]}<br>` +
+        `Percentile: %{customdata[1]} (%{customdata[2]})<br>` +
+        `${metricLabel}: %{y}<br>` +
+        `Date: %{customdata[3]}` +
+        `<extra></extra>`,
+    });
+  });
+
+  const chartTitleBase = metricLabel || "Percentile";
+  const readableDate = formatIsoDateForTitle(isoDate);
+  const chartTitle = readableDate
+    ? `${chartTitleBase} - ${readableDate}`
+    : chartTitleBase;
+  const layout = {
+    title: {
+      text: chartTitle,
+      font: { size: 20 },
+    },
+    xaxis: {
+      type: "linear",
+      range: [normalizedStart, normalizedEnd],
+      tickmode: "array",
+      tickvals: buckets.map((pct) => pct / 100),
+      ticktext: buckets.map((pct) => getOrdinal(pct)),
+      title: "Percentile",
+      color: "#FFFFFF",
+      tickfont: { color: "#CCCCCC" },
+      linecolor: "#666666",
+      gridcolor: "#444444",
+    },
+    yaxis: {
+      title: metricLabel,
+      gridcolor: "#444444",
+      fixedrange: true,
+    },
+    margin: { ...BASE_CHART_MARGINS, b: 60 },
+    paper_bgcolor: "#181A1B",
+    plot_bgcolor: "#181A1B",
+    font: {
+      color: "#FFF",
+      family: "Inter, Roboto, Arial, sans-serif",
+    },
+    showlegend: false,
+  };
+
+  Plotly.newPlot(container, traces, layout, { responsive: true });
+  return { rendered: true, isoDate };
 }
 
 /**

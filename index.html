@@ -16,6 +16,14 @@
 
 <body>
   <h1>FFXIV DPS and Healing Trend</h1>
+  <div id="view-switcher">
+    <button type="button" data-view-id="trend" aria-pressed="true">
+      Trend View
+    </button>
+    <button type="button" data-view-id="percentile" aria-pressed="false">
+      Percentile View
+    </button>
+  </div>
 
   <div id="filters">
     <!-- ================================
@@ -31,7 +39,7 @@
          ================================ -->
     <div class="dropdown-section">
       <h3 id="boss-subheader" class="selectable-subheader">[Select Boss]</h3>
-      <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
+    <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
     </div>
 
     <!-- Hidden native <select> for accessibility/fallback -->
@@ -41,7 +49,7 @@
     <!-- ==========================================================================
          FFXIV Percentile/Reference/Comparison Slider Styles
          ========================================================================== -->
-    <div id="percentile-slider-container">
+    <div id="percentile-slider-container" data-view="trend" class="view-hidden">
       <label id="percentile-label">Percentile:</label>
       <input id="percentile-slider" type="range" />
       <!-- Overlay for ticks and labels (generated dynamically) -->
@@ -51,24 +59,44 @@
     <!-- (End Percentile Slider) -->
   </div>
 
+  <div id="trend-view-placeholder" class="chart-empty-message" data-view="trend"></div>
+
   <!-- ================================
        Plot Containers (DPS/Healing)
        ================================ -->
-  <div id="dps-plot-container"></div>
-  <div id="healing-plot-container"></div>
+  <div id="dps-plot-container" data-view="trend" class="view-hidden"></div>
+  <div id="healing-plot-container" data-view="trend" class="view-hidden"></div>
 
   <!-- ==========================================================================
        Comparison Percentile Filters
        ========================================================================== -->
-  <div id="reference-percentile-container"></div>
-  <div id="comparison-slider-container"></div>
+  <div id="reference-percentile-container" data-view="trend" class="view-hidden"></div>
+  <div id="comparison-slider-container" data-view="trend" class="view-hidden"></div>
 
   <!-- ================================
        Comparison Plots and Message
        ================================ -->
-  <div id="dps-comparison-plot-container"></div>
-  <div id="healing-comparison-plot-container"></div>
-  <div id="comparison-message"></div>
+  <div id="dps-comparison-plot-container" data-view="trend" class="view-hidden"></div>
+  <div id="healing-comparison-plot-container" data-view="trend" class="view-hidden"></div>
+  <div id="comparison-message" data-view="trend" class="view-hidden"></div>
+
+  <!-- ================================
+       Percentile View Placeholder
+       ================================ -->
+  <div id="percentile-view-container" data-view="percentile" class="view-hidden">
+    <div id="percentile-view-placeholder" class="chart-empty-message"></div>
+    <div id="percentile-view-content" class="percentile-view-content view-hidden">
+      <div id="percentile-date-slider-container" class="percentile-date-slider" data-view="percentile"></div>
+      <div class="percentile-chart-section">
+        <h3>DPS Percentile</h3>
+        <div id="percentile-dps-chart" class="percentile-chart"></div>
+      </div>
+      <div class="percentile-chart-section">
+        <h3>Healing Percentile</h3>
+        <div id="percentile-hps-chart" class="percentile-chart"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- ================================
        Sidebar Header Bar (Right-top)
@@ -92,7 +120,7 @@
   <!-- ================================
        Job Selection Sidebar
        ================================ -->
-  <div id="job-sidebar" class="collapsed">
+    <div id="job-sidebar" class="collapsed">
     <h2>Jobs</h2>
     <div id="job-icons-container">
       <!-- Dynamically populated job icons go here -->

@@ -72,7 +72,8 @@ export function setupDpsTypeSidebarManager(dpsTypeOptions) {
   });
 
   // Sync visible label if filterState changes elsewhere
-  subscribeToFilterChanges((state) => {
+  subscribeToFilterChanges((state, change) => {
+    if (change && change.key !== "selectedDpsType") return;
     if (
       state.selectedDpsType &&
       selectedLabel.textContent !== state.selectedDpsType

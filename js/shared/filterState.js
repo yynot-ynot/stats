@@ -13,15 +13,20 @@ export const filterState = {
   selectedReferencePercentile: "",
   selectedComparisonPercentiles: new Set(),
   selectedJobs: new Set(),
+  selectedPercentileDate: "",
   listeners: new Set(),
 };
 
 /**
  * Subscribe a listener to be notified on any filter change.
- * @param {Function} listener - Callback receiving the full filter state.
+ * The listener receives the latest state snapshot and a change descriptor
+ * containing the key that changed plus its previous/next values.
+ * @param {Function} listener - Callback receiving (state, changeMeta).
+ * @returns {Function} unsubscribe handler
  */
 export function subscribeToFilterChanges(listener) {
   filterState.listeners.add(listener);
+  return () => filterState.listeners.delete(listener);
 }
 
 /**
@@ -36,11 +41,22 @@ export function updateFilterValue(key, value) {
     return;
   }
   logger.debug(`[filterState] Updating key: ${key}`, value);
+  const previousValue = filterState[key];
   filterState[key] = value;
-  logger.debug("[filterState] New state:", getCurrentFilterState());
-  filterState.listeners.forEach((listener) =>
-    listener(getCurrentFilterState())
-  );
+  const snapshot = getCurrentFilterState();
+  const changeMeta = {
+    key,
+    previousValue,
+    nextValue: value,
+  };
+  logger.debug("[filterState] New state:", snapshot);
+  filterState.listeners.forEach((listener) => {
+    try {
+      listener(snapshot, changeMeta);
+    } catch (err) {
+      logger.warn("Filter listener error", err);
+    }
+  });
 }
 
 /**
@@ -56,7 +72,9 @@ export function getCurrentFilterState() {
  * Hide both when sidebar is expanded.
  */
 export function updateSidebarLabelVisibility() {
-  const sidebar = document.getElementById("class-sidebar");
+  const sidebar =
+    document.getElementById("job-sidebar") ||
+    document.getElementById("class-sidebar");
   const labelContainer = document.getElementById("sidebar-label-container");
   const dpsTypeLabelContainer = document.getElementById(
     "dps-type-label-container"

@@ -3,7 +3,10 @@ import {
   MULTI_SELECTS,
   DEFAULTS,
 } from "../config/appConfig.js";
-import { updateFilterValue } from "../shared/filterState.js";
+import {
+  updateFilterValue,
+  subscribeToFilterChanges,
+} from "../shared/filterState.js";
 import {
   setupPercentileSlider,
   setupReferencePercentileSlider,
@@ -17,6 +20,14 @@ let bossIndexCache = {
   bossesByRaid: {},
   allBosses: new Set(),
 };
+
+export function __setBossIndexCacheForTests(cache) {
+  bossIndexCache = cache;
+}
+
+export function __getBossIndexCacheForTests() {
+  return bossIndexCache;
+}
 
 /**
  * Sort a raw array of dropdown values using the appropriate override for the given DOM id.
@@ -108,6 +119,8 @@ export function populateDropdown(selectElement, valueSet, label, options = {}) {
   const values = sortDropdownValues(Array.from(valueSet), id, latestDateMap);
 
   selectElement.innerHTML = "";
+  selectElement.value = "";
+  selectElement.selectedIndex = -1;
 
   if (selectElement.multiple) {
     const allOption = document.createElement("option");
@@ -141,6 +154,7 @@ export function populateDropdown(selectElement, valueSet, label, options = {}) {
     selectElement.value = defaultValue;
   } else if (!selectElement.multiple && selectElement.options.length > 0) {
     selectElement.selectedIndex = 0;
+    selectElement.value = selectElement.options[0].value;
   }
 
   const mappedKey = mapSelectIdToFilterKey(id);
@@ -301,7 +315,7 @@ function getBossSetForRaid(raid) {
  * Keep the boss dropdown synchronized with the currently selected raid.
  * When the player changes raids we rebuild the boss options so only relevant bosses are surfaced.
  */
-function setupRaidBossFiltering() {
+export function setupRaidBossFiltering() {
   const raidSelect = document.getElementById("raid-select");
   const bossSelect = document.getElementById("boss-select");
   if (!raidSelect || !bossSelect) return;
@@ -327,6 +341,19 @@ function setupRaidBossFiltering() {
   raidSelect.addEventListener("change", applyBossFilter);
 
   applyBossFilter();
+
+  if (!raidSelect.__raidFilterSubscription) {
+    raidSelect.__raidFilterSubscription = subscribeToFilterChanges(
+      (_, change) => {
+        if (change && change.key !== "selectedRaid") return;
+        const nextRaid = change?.nextValue || "";
+        if (nextRaid && raidSelect.value !== nextRaid) {
+          raidSelect.value = nextRaid;
+        }
+        applyBossFilter();
+      }
+    );
+  }
 }
 
 /**

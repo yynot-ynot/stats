@@ -160,15 +160,26 @@ export function setupComparisonPercentileSlider(percentiles) {
       labelRow.appendChild(label);
     });
   }
-  function updateCompare(newCompare) {
-    compare = new Set(newCompare);
-    updateFilterValue("selectedComparisonPercentiles", compare);
+  function updateCompare(newCompare, options = {}) {
+    const normalized = normalizeComparisonValues(newCompare);
+    compare = new Set(normalized);
     renderLabels();
+    if (!options.silent) {
+      updateFilterValue("selectedComparisonPercentiles", new Set(compare));
+    }
   }
-  renderLabels();
+  function normalizeComparisonValues(values) {
+    if (!values) return [];
+    if (values instanceof Set) values = Array.from(values);
+    if (!Array.isArray(values)) values = [values];
+    return values
+      .map((val) => Number(val))
+      .filter((val) => !Number.isNaN(val));
+  }
 
-  // Set initial value
   updateCompare(compare);
+  container.__setComparisonValues = (values, options = {}) =>
+    updateCompare(values, options);
 }
 
 /**
@@ -271,6 +282,19 @@ function initPercentileSliderUI({
     highlightTickAndLabel(idx, overlay);
     updateFilterValue(stateKey, closest);
   });
+
+  slider.__setPercentileValue = (targetValue, options = {}) => {
+    const normalized = Number(targetValue);
+    if (Number.isNaN(normalized)) return;
+    const idx = percentiles.indexOf(normalized);
+    if (idx === -1) return;
+    slider.value = String(positions[normalized]);
+    updateCustomThumb(idx);
+    highlightTickAndLabel(idx, overlay);
+    if (!options.silent) {
+      updateFilterValue(stateKey, normalized);
+    }
+  };
 }
 
 /**
@@ -313,4 +337,49 @@ function highlightTickAndLabel(idx, overlay, isPreview = false) {
     lbl.classList.toggle("visible", i === idx);
     lbl.classList.toggle("preview", isPreview && i === idx);
   });
+}
+
+/**
+ * Locate a slider by ID and invoke its internal setter helper.
+ * Silently no-ops if the slider has not been initialized yet.
+ * @param {string} sliderId
+ * @param {number} value
+ * @param {Object} [options]
+ */
+function setSliderValueById(sliderId, value, options = {}) {
+  const slider = document.getElementById(sliderId);
+  if (!slider || typeof slider.__setPercentileValue !== "function") return;
+  slider.__setPercentileValue(value, options);
+}
+
+/**
+ * Programmatically set the main percentile slider and optionally suppress filter broadcasts.
+ * @param {number} value
+ * @param {Object} [options]
+ */
+export function setPercentileSliderValue(value, options = {}) {
+  setSliderValueById("percentile-slider", value, options);
+}
+
+/**
+ * Programmatically set the reference percentile slider.
+ * @param {number} value
+ * @param {Object} [options]
+ */
+export function setReferencePercentileSliderValue(value, options = {}) {
+  setSliderValueById("reference-percentile-slider", value, options);
+}
+
+/**
+ * Programmatically set the multi-select comparison slider values.
+ * Accepts arrays, Sets, or single values and mirrors the click behavior.
+ * @param {Iterable<number>|Array<number>|Set<number>} values
+ * @param {Object} [options]
+ */
+export function setComparisonSliderValues(values, options = {}) {
+  const container = document.getElementById("comparison-slider-container");
+  if (!container || typeof container.__setComparisonValues !== "function") {
+    return;
+  }
+  container.__setComparisonValues(values, options);
 }

@@ -25,6 +25,7 @@ export const ALL_FILTER_KEYS = [
   "selectedReferencePercentile",
   "selectedComparisonPercentiles",
   "selectedJobs",
+  "selectedPercentileDate",
 ];
 
 // Default values for each dropdown (empty string means no default)

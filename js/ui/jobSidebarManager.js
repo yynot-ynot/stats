@@ -7,6 +7,48 @@ import { getLogger } from "../shared/logging/logger.js";
 import { JOB_ICONS, JOB_GROUPS, JOB_COLORS } from "../config/appConfig.js";
 
 const logger = getLogger("jobSidebarManager");
+let jobSidebarSelectionSync = null;
+/**
+ * Produce a deterministic signature for the current job selection.
+ * Used to detect when updates are redundant so UI redraws can be skipped.
+ * @param {Set<string>|Array<string>|null|undefined} jobNames
+ * @returns {string}
+ */
+export function buildJobSelectionSignature(jobNames) {
+  if (!jobNames) return "";
+  const normalized = normalizeJobList(jobNames);
+  if (normalized.length === 0) return "";
+  return normalized.slice().sort().join("|");
+}
+
+/**
+ * Apply an external job selection (e.g., from URL hydration) to the sidebar UI and filter state.
+ * @param {Iterable<string>|Set<string>|Array<string>} jobNames
+ * @param {Object} [options]
+ * @param {boolean} [options.silent=false] - If true, do not emit filter updates.
+ */
+export function applyJobSelections(jobNames, options = {}) {
+  if (typeof jobSidebarSelectionSync !== "function") {
+    logger.warn("Job sidebar not initialized; cannot apply job selections.");
+    return;
+  }
+  const normalized = normalizeJobList(jobNames);
+  jobSidebarSelectionSync(normalized, options);
+}
+
+/**
+ * Normalize any incoming representation of job selections (Set, array, single string)
+ * into a plain array so downstream helpers can treat them uniformly.
+ * @param {Iterable|string|null} jobNames
+ * @returns {Array<string>}
+ */
+function normalizeJobList(jobNames) {
+  if (!jobNames) return [];
+  if (jobNames instanceof Set) return Array.from(jobNames);
+  if (Array.isArray(jobNames)) return jobNames;
+  if (typeof jobNames === "string") return [jobNames];
+  return [];
+}
 
 /**
  * Create a job icon element for use in the sidebar grid.
@@ -300,6 +342,7 @@ export function setupJobSidebar(jobList) {
 
   container.innerHTML = ""; // Clear old content if any
   const selectedJobs = new Set();
+  const iconMap = new Map();
 
   // Track which job names are already displayed, so we can find "leftover" jobs later
   const displayedJobNames = new Set();
@@ -336,6 +379,38 @@ export function setupJobSidebar(jobList) {
     const otherSection = renderGroupSection("Other", leftovers, selectedJobs);
     container.appendChild(otherSection);
   }
+
+  container
+    .querySelectorAll(".job-icon[data-class]")
+    .forEach((node) => {
+      const jobName = node.getAttribute("data-class");
+      if (jobName) {
+        iconMap.set(jobName, node);
+      }
+    });
+
+  /**
+   * Apply a list of job names to the sidebar UI and optionally emit filter updates.
+   * This powers both URL hydration and state-to-UI synchronization.
+   * @param {Iterable|string} jobNames
+   * @param {Object} [options]
+   * @param {boolean} [options.silent=false]
+   */
+  const syncSelectionFromState = (jobNames, { silent } = {}) => {
+    const normalized = normalizeJobList(jobNames);
+    selectedJobs.clear();
+    normalized.forEach((name) => selectedJobs.add(name));
+    iconMap.forEach((el, jobName) => {
+      const shouldSelect = selectedJobs.has(jobName);
+      el.classList.toggle("selected", shouldSelect);
+    });
+    if (!silent) {
+      updateFilterValue("selectedJobs", new Set(selectedJobs));
+    }
+  };
+
+  jobSidebarSelectionSync = (jobNames, options = {}) =>
+    syncSelectionFromState(jobNames, options);
 
   const sidebar = document.getElementById("job-sidebar");
   const labelContainer = document.getElementById("sidebar-label-container");
@@ -419,11 +494,26 @@ export function setupJobSidebar(jobList) {
 
     // Initial label visibility on load
     updateSidebarLabelVisibility();
+    const observer = new MutationObserver(() => {
+      updateSidebarLabelVisibility();
+    });
+    observer.observe(sidebar, { attributes: true, attributeFilter: ["class"] });
   }
 
-  // Expand sidebar automatically if no jobs are selected, and always update mini icon list
-  subscribeToFilterChanges((state) => {
+  // Track last rendered selection signature so slider-only updates don't thrash the mini icons.
+  let lastRenderedSignature = null;
+
+  // Expand sidebar automatically if no jobs are selected, and update mini icon list only when jobs change.
+  subscribeToFilterChanges((state, change) => {
     if (!sidebar || !labelContainer) return;
+    if (!state) return;
+    if (change && change.key !== "selectedJobs") return;
+    const jobsSignature = buildJobSelectionSignature(state.selectedJobs);
+    const selectionChanged = jobsSignature !== lastRenderedSignature;
+    if (selectionChanged) {
+      lastRenderedSignature = jobsSignature;
+      syncSelectionFromState(state?.selectedJobs || [], { silent: true });
+    }
     // Open sidebar if no jobs are selected
     const hasSelection =
       state.selectedJobs && state.selectedJobs.size > 0 ? true : false;
@@ -443,9 +533,11 @@ export function setupJobSidebar(jobList) {
         }`
       );
     }
-    updateSelectedMiniIcons(
-      state.selectedJobs ? Array.from(state.selectedJobs) : []
-    );
+    if (selectionChanged) {
+      updateSelectedMiniIcons(
+        state.selectedJobs ? Array.from(state.selectedJobs) : []
+      );
+    }
     updateSidebarLabelVisibility(); // Always sync label visibility with sidebar state
   });
 }
