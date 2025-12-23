@@ -472,6 +472,8 @@ th {
 
 /* ==========================================================================
    Single Job Icon Styles (inside .icon-slot)
+   Intent: prevent Firefox flex layout from shrinking icons to 0px before the
+   lazy-loaded image resolves by pinning a fixed footprint.
    ========================================================================== */
 .job-icon img {
   width: 100%;
@@ -480,6 +482,9 @@ th {
   display: block;
   border-radius: 0;
   background: #232527;
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 64px;
 }
 
 .job-icon .fallback-label {
@@ -589,6 +594,7 @@ th {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .mini-healer-pair-img {
@@ -609,6 +615,21 @@ th {
   object-fit: contain;
   display: block;
   background: none;
+}
+
+/* Mini icon fallback label ensures text remains readable if the image fails */
+.mini-job-icon .fallback-label,
+.mini-healer-pair-mini .fallback-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #d5d5d5;
+  background: #232527;
+  border-radius: 6px;
 }
 
 /* Overlapping mini paired healer icons in collapsed sidebar label */
