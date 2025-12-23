@@ -259,11 +259,29 @@ th {
 
 /* Section header for each group */
 .job-group-header {
-  font-size: 1.08rem;
+  font-size: 1.4rem;
   font-weight: bold;
   color: #2582ca;
-  margin: 0.6rem 0 0.1rem 0.3rem;
+  margin: 0.6rem 0 0.65rem 0;
+  padding: 0.3rem 0.6rem 0.3rem -0.35rem;
+  width: 100%;
+  box-sizing: border-box;
   letter-spacing: 0.5px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: block;
+  transition: background 0.15s, color 0.15s;
+}
+
+.job-group-header:hover,
+.job-group-header:focus-visible {
+  background: rgba(124, 199, 255, 0.12);
+  color: #7cc7ff;
+}
+
+.job-group-header:focus-visible {
+  outline: 2px solid #7cc7ff;
+  outline-offset: 2px;
 }
 
 /* Collapsed (hidden) sidebar */
@@ -960,6 +978,16 @@ th {
   color: #fff;
   transform: translateX(-50%) scale(1.15);
   text-shadow: 0 0 8px rgba(0, 0, 0, 0.55);
+}
+
+/* Plotly tooltip polish */
+.plotly .hoverlayer .hovertext,
+.plotly .hoverlayer .hoverlabel {
+  border-radius: 12px !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
+  padding: 0.6rem 0.8rem !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 #reference-percentile-container .slider-tick-label {

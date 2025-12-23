@@ -34,6 +34,20 @@ const MONTH_NAMES = Object.freeze([
   "Dec",
 ]);
 
+function createHoverLabelTheme() {
+  return {
+    bgcolor: "rgba(13, 22, 32, 0.94)",
+    bordercolor: "#4DA3FF",
+    font: {
+      size: 13,
+      family: "Inter, Roboto, Arial, sans-serif",
+      color: "#F4FBFF",
+    },
+    align: "left",
+    namelength: -1,
+  };
+}
+
 /**
  * Helper to get ordinal suffix for a number (e.g., 1st, 2nd, 3rd, 4th, etc.)
  * @param {number} n
@@ -258,6 +272,7 @@ function prepareTraces(grouped, isDPS) {
       );
     });
 
+    const trendHoverTemplate = buildTrendHoverTemplate(isDPS);
     const trace = {
       type: "scatter",
       mode: "lines+markers",
@@ -265,30 +280,69 @@ function prepareTraces(grouped, isDPS) {
       x: traceX,
       y: traceY,
       customdata: traceCustom,
-      hovertemplate: isDPS
-        ? `
-          Job: %{customdata[6]}<br>
-          Parses: %{customdata[1]}<br>
-          Percentile: %{customdata[2]}<br>
-          DPS: %{customdata[5]} (%{customdata[3]})<br>
-          Date: %{customdata[7]}
-          <extra></extra>
-        `
-        : `
-          Job: %{customdata[0]}<br>
-          Parses: %{customdata[1]}<br>
-          Percentile: %{customdata[2]}<br>
-          HPS: %{customdata[4]}<br>
-          Date: %{customdata[7]}
-          <extra></extra>
-        `,
+      hovertemplate: trendHoverTemplate,
       connectgaps: true,
+      hoverlabel: createHoverLabelTheme(),
     };
     const color = getJobColor(key);
     trace.line = { color };
     trace.marker = { color };
     return trace;
   });
+}
+
+/**
+ * Modern hover template shared by the DPS/HPS trend charts.
+ * Adds a small uppercase label plus stronger typography to match the dark UI.
+ * @param {boolean} isDPS
+ * @returns {string}
+ */
+function buildTrendHoverTemplate(isDPS) {
+  const sectionLabel = isDPS ? "DPS TREND" : "HEALING TREND";
+  const metricLabel = isDPS ? "DPS" : "HPS";
+  const metricValue = isDPS
+    ? `%{customdata[5]} <span style="color:#6EE1D6;">(%{customdata[3]})</span>`
+    : "%{customdata[4]}";
+  return (
+    `<span style=\"font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;\">${sectionLabel}</span><br>` +
+    `<span style=\"font-size:1rem;font-weight:600;color:#FFFFFF;\">%{customdata[6]}</span>` +
+    `<br><span style=\"color:#9adece;\">Date</span>: %{customdata[7]}` +
+    `<br><span style=\"color:#9adece;\">Percentile</span>: %{customdata[2]}` +
+    `<br><span style=\"color:#9adece;\">Parses</span>: %{customdata[1]}` +
+    `<br><span style=\"color:#9adece;\">${metricLabel}</span>: ${metricValue}` +
+    "<extra></extra>"
+  );
+}
+
+/**
+ * Tooltip used for the percentile snapshot chart.
+ * @returns {string}
+ */
+function buildPercentileHoverTemplate() {
+  return (
+    `<span style=\"font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;\">Percentile Snapshot</span><br>` +
+    `<span style=\"font-size:1rem;font-weight:600;color:#FFFFFF;\">%{customdata[0]}</span>` +
+    `<br><span style=\"color:#9adece;\">Percentile</span>: %{customdata[1]} (%{customdata[2]})` +
+    `<br><span style=\"color:#9adece;\">%{customdata[4]}</span>: %{y}` +
+    `<br><span style=\"color:#9adece;\">Date</span>: %{customdata[3]}` +
+    "<extra></extra>"
+  );
+}
+
+/**
+ * Tooltip for comparison chart showing reference vs comparison deltas.
+ * @returns {string}
+ */
+function buildComparisonHoverTemplate() {
+  return (
+    `<span style=\"font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;\">Percentile Delta</span><br>` +
+    `<span style=\"font-size:1rem;font-weight:600;color:#FFFFFF;\">%{customdata[0]}</span>` +
+    `<br><span style=\"color:#9adece;\">Reference</span>: %{customdata[1]} (%{customdata[2]})` +
+    `<br><span style=\"color:#9adece;\">Compared</span>: %{customdata[3]} (%{customdata[4]})` +
+    `<br><span style=\"color:#9adece;\">Difference</span>: %{customdata[6]}% (%{customdata[5]})` +
+    `<br><span style=\"color:#9adece;\">Date</span>: %{customdata[7]}` +
+    "<extra></extra>"
+  );
 }
 
 /**
@@ -547,13 +601,8 @@ export function renderComparisonLineChart(
         }),
         y: ySorted,
         customdata: customSorted,
-        hovertemplate:
-          `Job : %{customdata[0]}<br>` +
-          `Ref %: %{customdata[1]} (%{customdata[2]})<br>` +
-          `Cmp %: %{customdata[3]} (%{customdata[4]})<br>` +
-          `Diff: %{customdata[6]}% (%{customdata[5]})<br>` +
-          `Date: %{customdata[7]}` +
-          `<extra></extra>`,
+        hovertemplate: buildComparisonHoverTemplate(),
+        hoverlabel: createHoverLabelTheme(),
         connectgaps: true,
       };
       const color = getJobColor(jobName);
@@ -677,11 +726,12 @@ function renderSinglePercentileChart({
     const yValues = buckets.map((pct) =>
       percentileMap.has(pct) ? percentileMap.get(pct) : null
     );
+    const dateLabel = isoDate || "—";
     const custom = buckets.map((pct) => [
       getDisplayLabelForJob(jobName),
       getOrdinal(pct),
       pct,
-      isoDate,
+      dateLabel,
       metricLabel,
     ]);
     const color = getJobColor(jobName);
@@ -695,12 +745,8 @@ function renderSinglePercentileChart({
       line: { color },
       marker: { color },
       connectgaps: false,
-      hovertemplate:
-        `Job: %{customdata[0]}<br>` +
-        `Percentile: %{customdata[1]} (%{customdata[2]})<br>` +
-        `${metricLabel}: %{y}<br>` +
-        `Date: %{customdata[3]}` +
-        `<extra></extra>`,
+      hovertemplate: buildPercentileHoverTemplate(),
+      hoverlabel: createHoverLabelTheme(),
     });
   });
 
@@ -742,6 +788,7 @@ function renderSinglePercentileChart({
       family: "Inter, Roboto, Arial, sans-serif",
     },
     showlegend: false,
+    hoverlabel: createHoverLabelTheme(),
   };
 
   Plotly.newPlot(container, traces, layout, { responsive: true });
@@ -914,6 +961,7 @@ function plotChartWithLayout(
       color: "#FFF",
       family: "Inter, Roboto, Arial, sans-serif",
     },
+    hoverlabel: createHoverLabelTheme(),
   };
   Plotly.newPlot(container, traces, layout, { responsive: true });
 }

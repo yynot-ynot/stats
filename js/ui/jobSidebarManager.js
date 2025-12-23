@@ -149,7 +149,12 @@ function renderGroupSection(groupName, jobList, selectedJobs) {
   const header = document.createElement("div");
   header.classList.add("job-group-header");
   header.textContent = groupName;
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
   section.appendChild(header);
+
+  const selectableJobNames = [];
+  const selectableJobElements = [];
 
   // Helper: returns true if this job is a paired healer combo
   function isPairedHealer(jobName) {
@@ -181,11 +186,39 @@ function renderGroupSection(groupName, jobList, selectedJobs) {
     } else {
       const iconDiv = createJobIconElement(jobName, selectedJobs);
       row.appendChild(iconDiv);
+      selectableJobNames.push(jobName);
+      selectableJobElements.push(iconDiv);
       rowCount++;
       i++;
     }
     if (rowCount >= 4) rowCount = 0; // next iteration starts new row
   }
+
+  const toggleGroupSelection = () => {
+    if (selectableJobNames.length === 0) return;
+    const shouldSelectAll = selectableJobNames.some(
+      (job) => !selectedJobs.has(job)
+    );
+    selectableJobNames.forEach((job, idx) => {
+      const iconEl = selectableJobElements[idx];
+      if (shouldSelectAll) {
+        selectedJobs.add(job);
+        iconEl.classList.add("selected");
+      } else {
+        selectedJobs.delete(job);
+        iconEl.classList.remove("selected");
+      }
+    });
+    updateFilterValue("selectedJobs", new Set(selectedJobs));
+  };
+
+  header.addEventListener("click", toggleGroupSelection);
+  header.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleGroupSelection();
+    }
+  });
 
   return section;
 }
