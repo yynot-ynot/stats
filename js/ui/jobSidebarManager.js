@@ -194,22 +194,20 @@ function renderGroupSection(groupName, jobList, selectedJobs) {
     if (rowCount >= 4) rowCount = 0; // next iteration starts new row
   }
 
+  /**
+   * Header click handler: toggles every standalone job in this section.
+   * Paired healer rows are purposely excluded from the selectable arrays
+   * so a user can grab combos individually without the group toggle touching them.
+   */
   const toggleGroupSelection = () => {
-    if (selectableJobNames.length === 0) return;
-    const shouldSelectAll = selectableJobNames.some(
-      (job) => !selectedJobs.has(job)
+    const result = toggleGroupSelectionState(
+      selectableJobNames,
+      selectableJobElements,
+      selectedJobs
     );
-    selectableJobNames.forEach((job, idx) => {
-      const iconEl = selectableJobElements[idx];
-      if (shouldSelectAll) {
-        selectedJobs.add(job);
-        iconEl.classList.add("selected");
-      } else {
-        selectedJobs.delete(job);
-        iconEl.classList.remove("selected");
-      }
-    });
-    updateFilterValue("selectedJobs", new Set(selectedJobs));
+    if (result !== null) {
+      updateFilterValue("selectedJobs", new Set(selectedJobs));
+    }
   };
 
   header.addEventListener("click", toggleGroupSelection);
@@ -221,6 +219,40 @@ function renderGroupSection(groupName, jobList, selectedJobs) {
   });
 
   return section;
+}
+
+/**
+ * Toggle a group's selected jobs between "all selected" and "all deselected".
+ * Selection state is determined by scanning the provided jobNames: if any job is missing
+ * from the selectedJobs set we treat the action as "select everything". Otherwise every job
+ * is already selected and we clear the group. DOM class toggles mirror the data changes so the
+ * visual grid remains consistent. When no jobNames are provided, the function no-ops and signals
+ * that by returning null.
+ * @param {Array<string>} jobNames - Standalone job names inside a group (paired healers excluded).
+ * @param {Array<HTMLElement>} jobElements - Icon elements aligned by index with jobNames.
+ * @param {Set<string>} selectedJobs - Shared selection state for the sidebar.
+ * @returns {boolean|null} True if we just selected all jobs, false if we deselected, null if no work.
+ */
+export function toggleGroupSelectionState(
+  jobNames,
+  jobElements,
+  selectedJobs
+) {
+  if (!jobNames || jobNames.length === 0) {
+    return null;
+  }
+  const shouldSelectAll = jobNames.some((job) => !selectedJobs.has(job));
+  jobNames.forEach((job, idx) => {
+    const iconEl = jobElements[idx];
+    if (shouldSelectAll) {
+      selectedJobs.add(job);
+      iconEl?.classList?.add("selected");
+    } else {
+      selectedJobs.delete(job);
+      iconEl?.classList?.remove("selected");
+    }
+  });
+  return shouldSelectAll;
 }
 
 /**

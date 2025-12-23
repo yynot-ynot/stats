@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   setupSidebarCollapseHandlers,
   buildJobSelectionSignature,
+  toggleGroupSelectionState,
 } from "../js/ui/jobSidebarManager.js";
 
 function createClassListStub() {
@@ -195,4 +196,63 @@ test("buildJobSelectionSignature sorts job names deterministically", () => {
   const setA = new Set(["Paladin", "Warrior", "Dark Knight"]);
   const arrayB = ["Dark Knight", "Paladin", "Warrior"];
   assert.equal(buildJobSelectionSignature(setA), buildJobSelectionSignature(arrayB));
+});
+
+/**
+ * Minimal stub that mimics the job icon elements in the sidebar.
+ * We only need classList semantics so the helper reuses the shared Set-based classList stub.
+ */
+function createIconStub() {
+  return {
+    classList: createClassListStub(),
+  };
+}
+
+// The next two tests ensure the group header toggles add/remove jobs consistently.
+// They explicitly assert both the underlying Set state and the DOM class mirror.
+test("toggleGroupSelectionState selects all jobs when any are unselected", () => {
+  const selectedJobs = new Set(["Dragoon"]);
+  const jobNames = ["Paladin", "Warrior"];
+  const iconElements = jobNames.map(() => createIconStub());
+
+  const result = toggleGroupSelectionState(
+    jobNames,
+    iconElements,
+    selectedJobs
+  );
+
+  assert.equal(result, true, "expected selection pass when jobs missing");
+  assert.ok(selectedJobs.has("Paladin"));
+  assert.ok(selectedJobs.has("Warrior"));
+  iconElements.forEach((icon) => {
+    assert.equal(
+      icon.classList.contains("selected"),
+      true,
+      "icon element should reflect selected class"
+    );
+  });
+});
+
+test("toggleGroupSelectionState deselects jobs when all are already selected", () => {
+  const selectedJobs = new Set(["Paladin", "Warrior"]);
+  const jobNames = ["Paladin", "Warrior"];
+  const iconElements = jobNames.map(() => createIconStub());
+  iconElements.forEach((icon) => icon.classList.add("selected"));
+
+  const result = toggleGroupSelectionState(
+    jobNames,
+    iconElements,
+    selectedJobs
+  );
+
+  assert.equal(result, false, "expected deselection when all jobs selected");
+  assert.equal(selectedJobs.has("Paladin"), false);
+  assert.equal(selectedJobs.has("Warrior"), false);
+  iconElements.forEach((icon) => {
+    assert.equal(
+      icon.classList.contains("selected"),
+      false,
+      "icon element should remove selected class"
+    );
+  });
 });
