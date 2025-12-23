@@ -5,17 +5,19 @@ const logger = getLogger("percentileDataUtils");
 /**
  * Build percentile-series metadata for chart rendering. Filters the provided dataset by raid/boss/job/metric,
  * restricts the results to the requested date (falling back to the most recent), and collects percentile buckets for each job.
+ * While the series only contains rows for the active date, the helper also precomputes the minimum/maximum metric value across
+ * all available dates that match the filters so percentile charts can reuse a stable y-axis range while the user scrubs the slider.
  *
  * @param {Array<Object>} data - Raw data rows containing { raid, boss, job|class, percentile, date, dps|hps, dps_type }.
  * @param {Object} filters - Filter criteria { raid, boss, jobNames, dps_type }.
  * @param {Object} options - Additional settings.
  * @param {string} options.valueKey - The numeric field to read (e.g., "dps" or "hps").
  * @param {string} [options.targetDate] - Preferred compact date (YYYYMMDD). Defaults to latest available.
- * @returns {{ selectedDate: (string|null), buckets: number[], series: Map<string, Map<number, number>> }}
+ * @returns {{ selectedDate: (string|null), buckets: number[], series: Map<string, Map<number, number>>, valueRange: ({min: number, max: number}|null) }}
  */
 export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
   if (!Array.isArray(data) || data.length === 0) {
-    return { selectedDate: null, buckets: [], series: new Map() };
+    return createEmptySeriesResult();
   }
 
   const jobFilter = normalizeJobFilter(filters?.jobNames);
@@ -30,15 +32,16 @@ export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
   });
 
   if (filteredRows.length === 0) {
-    return { selectedDate: null, buckets: [], series: new Map() };
+    return createEmptySeriesResult();
   }
 
+  const valueRange = computeValueRange(filteredRows, valueKey);
   const dateSet = new Set(
     filteredRows.filter((row) => row.date).map((row) => row.date)
   );
   if (dateSet.size === 0) {
     logger.warn("No date information found in percentile data.");
-    return { selectedDate: null, buckets: [], series: new Map() };
+    return createEmptySeriesResult();
   }
   const sortedDates = Array.from(dateSet).sort();
   const preferred =
@@ -61,7 +64,7 @@ export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
     series.get(jobName).set(percentile, row[valueKey]);
   });
   const buckets = Array.from(bucketSet).sort((a, b) => a - b);
-  return { selectedDate: preferred, buckets, series };
+  return { selectedDate: preferred, buckets, series, valueRange };
 }
 
 function normalizeJobFilter(jobNames) {
@@ -69,6 +72,24 @@ function normalizeJobFilter(jobNames) {
   if (jobNames instanceof Set) return jobNames.size ? new Set(jobNames) : null;
   if (Array.isArray(jobNames)) return jobNames.length ? new Set(jobNames) : null;
   return null;
+}
+
+function computeValueRange(rows, valueKey) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  rows.forEach((row) => {
+    const value = row[valueKey];
+    if (typeof value !== "number" || Number.isNaN(value)) return;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  });
+  if (min === Infinity || max === -Infinity) return null;
+  return { min, max };
+}
+
+function createEmptySeriesResult() {
+  return { selectedDate: null, buckets: [], series: new Map(), valueRange: null };
 }
 
 /**

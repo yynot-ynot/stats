@@ -652,7 +652,7 @@ function renderSinglePercentileChart({
   targetDate,
 }) {
   if (!container) return { rendered: false, isoDate: null };
-  const { selectedDate, buckets, series } = buildPercentileSeries(
+  const { selectedDate, buckets, series, valueRange } = buildPercentileSeries(
     data,
     filters,
     {
@@ -709,6 +709,8 @@ function renderSinglePercentileChart({
   const chartTitle = readableDate
     ? `${chartTitleBase} - ${readableDate}`
     : chartTitleBase;
+  // Pin the y-axis to the global min/max so scrubbing the date slider does not rescale the chart.
+  const yAxisRange = buildYAxisRange(valueRange);
   const layout = {
     title: {
       text: chartTitle,
@@ -730,6 +732,7 @@ function renderSinglePercentileChart({
       title: metricLabel,
       gridcolor: "#444444",
       fixedrange: true,
+      range: yAxisRange || undefined,
     },
     margin: { ...BASE_CHART_MARGINS, b: 60 },
     paper_bgcolor: "#181A1B",
@@ -743,6 +746,27 @@ function renderSinglePercentileChart({
 
   Plotly.newPlot(container, traces, layout, { responsive: true });
   return { rendered: true, isoDate };
+}
+
+/**
+ * Build an explicit y-axis range spanning every value returned by buildPercentileSeries so
+ * the percentile slider does not rescale the chart on each date change. Adds a small padding
+ * to prevent data points from sitting flush against the chart edges and expands zero-span
+ * ranges to maintain Plotly rendering stability.
+ * @param {{min: number, max: number}|null} valueRange
+ * @returns {number[]|null}
+ */
+function buildYAxisRange(valueRange) {
+  if (!valueRange) return null;
+  const { min, max } = valueRange;
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  if (min === max) {
+    const delta = Math.max(Math.abs(min) * 0.1, 1);
+    return [min - delta, max + delta];
+  }
+  const span = max - min;
+  const padding = Math.max(span * 0.05, 1);
+  return [min - padding, max + padding];
 }
 
 /**

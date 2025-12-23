@@ -36,6 +36,22 @@ test("buildPercentileSeries respects job filter and ignores missing values", () 
   assert.equal(result.series.get("Sage").get(75), undefined);
 });
 
+test("buildPercentileSeries captures min/max across all filtered dates", () => {
+  const data = [
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 50, date: "20240101", dps: 900 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 90, date: "20240101", dps: 1400 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 50, date: "20240201", dps: 1600 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 90, date: "20240201", dps: 2100 },
+  ];
+  const result = buildPercentileSeries(
+    data,
+    { raid: "Eden", boss: "Prime", jobNames: ["Warrior"] },
+    { valueKey: "dps", targetDate: "20240201" }
+  );
+  assert.equal(result.selectedDate, "20240201");
+  assert.deepEqual(result.valueRange, { min: 900, max: 2100 });
+});
+
 test("buildPercentileSeries handles dps_type filter", () => {
   const data = [
     { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 50, date: "20240201", dps_type: "rdps", dps: 1500 },
