@@ -4,6 +4,7 @@ import {
   DEFAULTS,
 } from "../config/appConfig.js";
 import {
+  filterState,
   updateFilterValue,
   subscribeToFilterChanges,
 } from "../shared/filterState.js";
@@ -211,12 +212,24 @@ export function setupHeaderBindings() {
   const bossSubheader = document.getElementById("boss-subheader");
   const raidDropdown = document.getElementById("raid-dropdown");
   const bossDropdown = document.getElementById("boss-dropdown");
+  const raidPlaceholder = "[Select Raid]";
+  const bossPlaceholder = "[Select Boss]";
 
-  raidTitle.textContent = raidSelect.value || "[Select Raid]";
-  bossSubheader.textContent = bossSelect.value || "[Select Boss]";
+  raidTitle.textContent = raidSelect.value || raidPlaceholder;
+  bossSubheader.textContent = bossSelect.value || bossPlaceholder;
 
-  setupSingleHeaderBehavior(raidSelect, raidTitle, raidDropdown);
-  setupSingleHeaderBehavior(bossSelect, bossSubheader, bossDropdown);
+  setupSingleHeaderBehavior(
+    raidSelect,
+    raidTitle,
+    raidDropdown,
+    raidPlaceholder
+  );
+  setupSingleHeaderBehavior(
+    bossSelect,
+    bossSubheader,
+    bossDropdown,
+    bossPlaceholder
+  );
 
   document.addEventListener("click", (e) => {
     if (!raidTitle.contains(e.target) && !raidDropdown.contains(e.target)) {
@@ -312,8 +325,10 @@ function getBossSetForRaid(raid) {
 }
 
 /**
- * Keep the boss dropdown synchronized with the currently selected raid.
- * When the player changes raids we rebuild the boss options so only relevant bosses are surfaced.
+ * Keep the boss dropdown synchronized with the currently selected raid and preserve
+ * the user-selected boss whenever it still exists within the filtered set.
+ * When the raid changes we rebuild the options so only relevant bosses are surfaced
+ * and reapply the prior boss selection instead of defaulting to the first entry.
  */
 export function setupRaidBossFiltering() {
   const raidSelect = document.getElementById("raid-select");
@@ -322,7 +337,24 @@ export function setupRaidBossFiltering() {
 
   const applyBossFilter = () => {
     const bossesForRaid = getBossSetForRaid(raidSelect.value);
+    // Preserve the previously selected boss if it still exists in the filtered set.
+    const preferredBoss =
+      filterState.selectedBoss && bossesForRaid.has(filterState.selectedBoss)
+        ? filterState.selectedBoss
+        : null;
     populateDropdown(bossSelect, bossesForRaid, "Boss");
+
+    if (preferredBoss) {
+      const hasPreferredOption = Array.from(bossSelect.options).some(
+        (opt) => opt.value === preferredBoss
+      );
+      if (hasPreferredOption && bossSelect.value !== preferredBoss) {
+        bossSelect.value = preferredBoss;
+        const changeEvent =
+          typeof Event === "function" ? new Event("change") : { type: "change" };
+        bossSelect.dispatchEvent(changeEvent);
+      }
+    }
 
     const bossTitle = document.getElementById("boss-subheader");
     if (bossTitle) {
@@ -364,7 +396,23 @@ export function setupRaidBossFiltering() {
  * @param {HTMLElement} titleEl - The clickable title/header.
  * @param {HTMLElement} dropdownEl - The dropdown container.
  */
-function setupSingleHeaderBehavior(selectEl, titleEl, dropdownEl) {
+function setupSingleHeaderBehavior(
+  selectEl,
+  titleEl,
+  dropdownEl,
+  placeholderText = ""
+) {
+  const fallbackText =
+    placeholderText || titleEl?.dataset?.placeholder || titleEl.textContent;
+  if (titleEl && fallbackText) {
+    titleEl.dataset.placeholder = fallbackText;
+  }
+
+  const syncTitleFromSelect = () => {
+    if (!titleEl) return;
+    titleEl.textContent = selectEl.value || fallbackText || titleEl.textContent;
+  };
+
   const updateInteractivity = () => {
     if (selectEl.options.length <= 1) {
       titleEl.classList.add("non-interactive");
@@ -377,6 +425,7 @@ function setupSingleHeaderBehavior(selectEl, titleEl, dropdownEl) {
   // expose so other helpers (e.g., raid->boss filtering) can refresh when options change
   titleEl.__updateDropdownInteractivity = updateInteractivity;
   updateInteractivity();
+  syncTitleFromSelect();
 
   if (titleEl.__dropdownClickHandler) return;
 
@@ -394,4 +443,13 @@ function setupSingleHeaderBehavior(selectEl, titleEl, dropdownEl) {
 
   titleEl.addEventListener("click", clickHandler);
   titleEl.__dropdownClickHandler = clickHandler;
+
+  if (!selectEl.__headerSyncHandler) {
+    const changeHandler = () => {
+      syncTitleFromSelect();
+      updateInteractivity();
+    };
+    selectEl.addEventListener("change", changeHandler);
+    selectEl.__headerSyncHandler = changeHandler;
+  }
 }
