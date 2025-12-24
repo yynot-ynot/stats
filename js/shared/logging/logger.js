@@ -18,6 +18,7 @@ const moduleLevels = new Map();
  * Set the logging level for a given module.
  * @param {string} moduleName - Identifier for the module using the logger.
  * @param {string} levelName - One of: "none", "error", "warn", "info", "debug".
+ *   Use {@link envLogLevel} when you want the level to adapt to host env.
  */
 export function setModuleLogLevel(moduleName, levelName) {
   moduleLevels.set(moduleName, LOG_LEVELS[levelName] ?? LOG_LEVELS.info);
@@ -62,4 +63,19 @@ export function getLogger(moduleName) {
       }
     },
   };
+}
+
+/**
+ * Picks a log level string based on whether we are running on localhost.
+ * @param {string} [localLevel="debug"] - Level to use when running locally.
+ * @param {string} [prodLevel="info"] - Level to use for non-local hosts.
+ * @returns {string}
+ */
+export function envLogLevel(localLevel = "debug", prodLevel = "info") {
+  const isLocalhost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1");
+
+  return isLocalhost ? localLevel : prodLevel;
 }

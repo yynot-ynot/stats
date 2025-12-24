@@ -113,6 +113,7 @@ export async function init() {
     setupDataDisplayManager(allData);
     startFilterUrlSync();
     broadcastCurrentFilters();
+    logDisplayedRaidBossState();
     const tListeners = performance.now();
     logger.debug(
       `Setup filter listeners in ${(tListeners - tFiltersEnd).toFixed(1)}ms`
@@ -200,4 +201,21 @@ function broadcastCurrentFilters() {
   Object.entries(state).forEach(([key, value]) => {
     updateFilterValue(key, value);
   });
+}
+
+/**
+ * Report the currently displayed raid/boss titles alongside the
+ * centralized filter selections so URL hydration issues are visible.
+ */
+function logDisplayedRaidBossState() {
+  const raidTitleEl = document.getElementById("raid-title");
+  const bossTitleEl = document.getElementById("boss-subheader");
+  const displayedRaid = raidTitleEl?.textContent?.trim() || "[None]";
+  const displayedBoss = bossTitleEl?.textContent?.trim() || "[None]";
+  const { selectedRaid = "", selectedBoss = "" } = getCurrentFilterState();
+  logger.debug(
+    `Displayed raid: "${displayedRaid}" (filter: "${
+      selectedRaid || ""
+    }") | Displayed boss: "${displayedBoss}" (filter: "${selectedBoss || ""}")`
+  );
 }
