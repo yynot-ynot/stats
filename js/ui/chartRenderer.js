@@ -502,6 +502,206 @@ export function renderFilteredLineChart(
 }
 
 /**
+ * Build a per-job parse time-series for the parse trend charts.
+ * Each job gets its own timeline so stacked lines highlight differences in reporting volume,
+ * while the shared daily axis ensures gaps still consume space (preventing compressed ranges when a job skips days).
+ * @param {Array<Object>} rows - Filtered DPS rows containing {date, parses, job|class}.
+ * @returns {{
+ *   compactDates: Array<string>,
+ *   dateLabels: Array<string>,
+ *   isoDates: Array<string>,
+ *   jobSeries: Map<string, {
+ *     totals: Array<(number|null)>,
+ *     deltas: Array<(number|null)>,
+ *     previousTotals: Array<(number|null)>,
+ *     previousIsoDates: Array<(string|null)>
+ *   }>
+ * }}
+ */
+export function buildParseTrendSeries(rows) {
+  const dateSet = new Set();
+  const jobTotals = new Map();
+
+  rows.forEach((row) => {
+    const parsedCount = Number(row.parses);
+    if (!Number.isFinite(parsedCount)) return;
+    const dateKey = row.date;
+    const jobName = row.job ?? row.class;
+    if (!jobName) return;
+    if (!jobTotals.has(jobName)) {
+      jobTotals.set(jobName, new Map());
+    }
+    const perJobDates = jobTotals.get(jobName);
+    perJobDates.set(dateKey, (perJobDates.get(dateKey) ?? 0) + parsedCount);
+    dateSet.add(dateKey);
+  });
+
+  if (dateSet.size === 0 || jobTotals.size === 0) {
+    return {
+      compactDates: [],
+      dateLabels: [],
+      isoDates: [],
+      jobSeries: new Map(),
+    };
+  }
+
+  const compactDates = getFullDateRange(Array.from(dateSet));
+  const dateLabels = getDateLabels(compactDates);
+  const isoDates = compactDates.map((d) => toISODate(d));
+  const jobSeries = new Map();
+
+  jobTotals.forEach((dateMap, jobName) => {
+    const totals = compactDates.map((date) =>
+      dateMap.has(date) ? dateMap.get(date) : null
+    );
+    const previousTotals = [];
+    const previousIsoDates = [];
+    let lastKnownTotal = null;
+    let lastIso = null;
+    const deltas = totals.map((value, index) => {
+      previousTotals[index] = lastKnownTotal;
+      previousIsoDates[index] = lastIso;
+      if (value === null) {
+        return null;
+      }
+      if (lastKnownTotal === null) {
+        lastKnownTotal = value;
+        lastIso = isoDates[index];
+        return null;
+      }
+      const delta = value - lastKnownTotal;
+      lastKnownTotal = value;
+      lastIso = isoDates[index];
+      return delta;
+    });
+    jobSeries.set(jobName, {
+      totals,
+      deltas,
+      previousTotals,
+      previousIsoDates,
+    });
+  });
+
+  return {
+    compactDates,
+    dateLabels,
+    isoDates,
+    jobSeries,
+  };
+}
+
+/**
+ * Render the per-job total parse count and the day-over-day parse delta charts at the bottom of the trend view.
+ * Reuses the same filtering inputs as the DPS chart so each job's line reflects the visible selection,
+ * enforces continuous daily spacing via `getFullDateRange`, and writes detail-rich hover tooltips describing each point.
+ * @param {Object} params
+ * @param {Array<Object>} params.data - Raw DPS data (already trimmed to rows containing `dps`).
+ * @param {Object} params.filters - Filter snapshot (raid, boss, percentile, dps_type, jobNames).
+ * @param {HTMLElement|null} params.totalContainer - DOM node for the total parses chart.
+ * @param {HTMLElement|null} params.deltaContainer - DOM node for the delta chart.
+ */
+export function renderParseTrendCharts({
+  data,
+  filters,
+  totalContainer,
+  deltaContainer,
+}) {
+  if (!totalContainer || !deltaContainer) return;
+  const filteredRows = applyFilters(data, filters, false);
+  const {
+    compactDates,
+    dateLabels,
+    isoDates,
+    jobSeries,
+  } = buildParseTrendSeries(filteredRows);
+
+  if (compactDates.length === 0 || jobSeries.size === 0) {
+    const emptyMarkup =
+      '<div class="chart-empty-message">No parse data available for the current selection.</div>';
+    totalContainer.innerHTML = emptyMarkup;
+    deltaContainer.innerHTML = emptyMarkup;
+    return;
+  }
+
+  const totalTraces = [];
+  const deltaTraces = [];
+  jobSeries.forEach((series, jobName) => {
+    const jobLabel = getDisplayLabelForJob(jobName);
+    const color = getJobColor(jobName);
+    const totalTrace = {
+      type: "scatter",
+      mode: "lines+markers",
+      name: jobLabel,
+      x: dateLabels,
+      y: series.totals,
+      customdata: isoDates.map((iso) => [iso, jobLabel]),
+      line: { color },
+      marker: { color },
+      connectgaps: true,
+      hoverlabel: createHoverLabelTheme(),
+      hovertemplate:
+        '<span style="font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;">Parse Total</span><br>' +
+        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[1]}</span>' +
+        '<br><span style="color:#9adece;">Date</span>: %{customdata[0]}' +
+        '<br><span style="color:#9adece;">Parses</span>: %{y:,}<extra></extra>',
+    };
+    totalTraces.push(totalTrace);
+
+    const deltaTrace = {
+      type: "scatter",
+      mode: "lines+markers",
+      name: jobLabel,
+      x: dateLabels,
+      y: series.deltas,
+      customdata: isoDates.map((iso, index) => [
+        iso,
+        jobLabel,
+        series.totals[index],
+        series.previousTotals[index],
+        series.previousIsoDates[index] ?? "—",
+      ]),
+      line: { color },
+      marker: { color },
+      connectgaps: false,
+      hoverlabel: createHoverLabelTheme(),
+      hovertemplate:
+        '<span style="font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;">Parse Delta</span><br>' +
+        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[1]}</span>' +
+        '<br><span style="color:#9adece;">Date</span>: %{customdata[0]}' +
+        '<br><span style="color:#9adece;">Current Parses</span>: %{customdata[2]:,}' +
+        '<br><span style="color:#9adece;">Previous Parses</span>: %{customdata[3]:,} (%{customdata[4]})' +
+        '<br><span style="color:#9adece;">Change</span>: %{y:,}<extra></extra>',
+    };
+    deltaTraces.push(deltaTrace);
+  });
+
+  const annotations = generateYearAnnotations(compactDates, dateLabels, {
+    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+  });
+  plotChartWithLayout(
+    totalTraces,
+    totalContainer,
+    dateLabels,
+    "Parse Volume Trend",
+    annotations,
+    "Total Parses",
+    true
+  );
+  const deltaAnnotations = generateYearAnnotations(compactDates, dateLabels, {
+    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+  });
+  plotChartWithLayout(
+    deltaTraces,
+    deltaContainer,
+    dateLabels,
+    "Parse Delta Trend",
+    deltaAnnotations,
+    "Delta Parses",
+    true
+  );
+}
+
+/**
  * Render a line chart showing the difference between selected comparison percentiles and a reference percentile,
  * with the following features:
  *   1. X-axis always covers the complete date range (no gaps even if some dates missing from input).
@@ -927,7 +1127,8 @@ function plotChartWithLayout(
   title,
   annotations,
   yAxisTitle,
-  fixedRange = true
+  fixedRange = true,
+  showLegend = false
 ) {
   const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
   // Add (wkN) starting at 1 for each 7-day label
@@ -967,7 +1168,7 @@ function plotChartWithLayout(
     },
     margin: layoutMargin,
     annotations,
-    showlegend: false,
+    showlegend: showLegend,
     paper_bgcolor: "#181A1B", // Nearly black/dark gray (matches Brave's dark)
     plot_bgcolor: "#181A1B",
     font: {

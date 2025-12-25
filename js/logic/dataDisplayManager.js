@@ -26,6 +26,8 @@ const TREND_VIEW_SECTION_IDS = Object.freeze([
   "dps-comparison-plot-container",
   "healing-comparison-plot-container",
   "comparison-message",
+  "parse-total-plot-container",
+  "parse-delta-plot-container",
 ]);
 
 /**
@@ -149,6 +151,12 @@ function updateChart(state) {
 
   const dpsContainer = document.getElementById("dps-plot-container");
   const healingContainer = document.getElementById("healing-plot-container");
+  const parseTotalContainer = document.getElementById(
+    "parse-total-plot-container"
+  );
+  const parseDeltaContainer = document.getElementById(
+    "parse-delta-plot-container"
+  );
 
   logger.debug("Updating chart with filters:");
   logger.debug(`DPS Filters: ${JSON.stringify(dpsFilters)}`);
@@ -161,20 +169,29 @@ function updateChart(state) {
       ? formatDpsMetricTitle(selectedDpsType)
       : "DPS";
 
-  import(`../ui/chartRenderer.js`).then(({ renderFilteredLineChart }) => {
-    renderFilteredLineChart(
-      dpsData,
-      dpsFilters,
-      dpsContainer,
-      dpsMetricTitle
-    );
-    renderFilteredLineChart(
-      healingData,
-      healingFilters,
-      healingContainer,
-      "Healing"
-    );
-  });
+  import(`../ui/chartRenderer.js`).then(
+    ({ renderFilteredLineChart, renderParseTrendCharts }) => {
+      renderFilteredLineChart(
+        dpsData,
+        dpsFilters,
+        dpsContainer,
+        dpsMetricTitle
+      );
+      renderFilteredLineChart(
+        healingData,
+        healingFilters,
+        healingContainer,
+        "Healing"
+      );
+      // Surface aggregate parse counts so analysts can immediately gauge data volume trends.
+      renderParseTrendCharts({
+        data: dpsData,
+        filters: dpsFilters,
+        totalContainer: parseTotalContainer,
+        deltaContainer: parseDeltaContainer,
+      });
+    }
+  );
 }
 
 /**

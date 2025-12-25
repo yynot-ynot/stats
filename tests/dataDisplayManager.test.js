@@ -39,6 +39,8 @@ test("toggleTrendViewVisibility hides trend sections until jobs exist", () => {
   const dpsComp = createElementWithClassList();
   const hpsComp = createElementWithClassList();
   const comparisonMsg = createElementWithClassList();
+  const parseTotal = createElementWithClassList();
+  const parseDelta = createElementWithClassList();
 
   const originalDocument = global.document;
   global.document = {
@@ -62,6 +64,10 @@ test("toggleTrendViewVisibility hides trend sections until jobs exist", () => {
           return hpsComp;
         case "comparison-message":
           return comparisonMsg;
+        case "parse-total-plot-container":
+          return parseTotal;
+        case "parse-delta-plot-container":
+          return parseDelta;
         default:
           return null;
       }
@@ -79,6 +85,8 @@ test("toggleTrendViewVisibility hides trend sections until jobs exist", () => {
     assert.ok(dpsComp.classList.contains("view-hidden"));
     assert.ok(hpsComp.classList.contains("view-hidden"));
     assert.ok(comparisonMsg.classList.contains("view-hidden"));
+    assert.ok(parseTotal.classList.contains("view-hidden"));
+    assert.ok(parseDelta.classList.contains("view-hidden"));
   } finally {
     global.document = originalDocument;
   }
@@ -97,6 +105,8 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
   const dpsComp = createElementWithClassList(["view-hidden"]);
   const hpsComp = createElementWithClassList(["view-hidden"]);
   const comparisonMsg = createElementWithClassList(["view-hidden"]);
+  const parseTotal = createElementWithClassList(["view-hidden"]);
+  const parseDelta = createElementWithClassList(["view-hidden"]);
 
   const originalDocument = global.document;
   global.document = {
@@ -120,6 +130,10 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
           return hpsComp;
         case "comparison-message":
           return comparisonMsg;
+        case "parse-total-plot-container":
+          return parseTotal;
+        case "parse-delta-plot-container":
+          return parseDelta;
         default:
           return null;
       }
@@ -137,6 +151,8 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
     assert.ok(!dpsComp.classList.contains("view-hidden"));
     assert.ok(!hpsComp.classList.contains("view-hidden"));
     assert.ok(!comparisonMsg.classList.contains("view-hidden"));
+    assert.ok(!parseTotal.classList.contains("view-hidden"));
+    assert.ok(!parseDelta.classList.contains("view-hidden"));
   } finally {
     global.document = originalDocument;
   }
