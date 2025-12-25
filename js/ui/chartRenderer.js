@@ -444,6 +444,7 @@ export function renderFilteredLineChart(
   container,
   titleSuffix = ""
 ) {
+  const prepStart = performance.now();
   let filtered;
   const isDPS = titleSuffix.toLowerCase().includes("dps");
 
@@ -490,8 +491,11 @@ export function renderFilteredLineChart(
   // Find x labels to show every 7 days, starting from first
   const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
   const ticktext = tickvals;
+  const prepDurationMs = performance.now() - prepStart;
+  const containerId = container?.id || "unknown-container";
 
-  plotChartWithLayout(
+  const plotStart = performance.now();
+  const plotPromise = plotChartWithLayout(
     traces,
     container,
     sortedDateLabels,
@@ -499,6 +503,16 @@ export function renderFilteredLineChart(
     annotations,
     yAxisTitle
   );
+  logTrendChartTiming({
+    chartTitle: titleSuffix || "Output",
+    containerId,
+    prepDurationMs,
+    plotStart,
+    plotPromise,
+    rows: filtered.length,
+    traces: traces.length,
+    signatureData: buildLogSignatureFromFilters(filters),
+  });
 }
 
 /**
@@ -606,6 +620,7 @@ export function renderParseTrendCharts({
   totalContainer,
   deltaContainer,
 }) {
+  const prepStart = performance.now();
   if (!totalContainer || !deltaContainer) return;
   const filteredRows = applyFilters(data, filters, false);
   const {
@@ -675,10 +690,15 @@ export function renderParseTrendCharts({
     deltaTraces.push(deltaTrace);
   });
 
+  const prepDurationMs = performance.now() - prepStart;
+  const totalContainerId = totalContainer?.id || "parse-total-plot";
+  const deltaContainerId = deltaContainer?.id || "parse-delta-plot";
+
   const annotations = generateYearAnnotations(compactDates, dateLabels, {
     singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
   });
-  plotChartWithLayout(
+  const totalPlotStart = performance.now();
+  const totalPromise = plotChartWithLayout(
     totalTraces,
     totalContainer,
     dateLabels,
@@ -687,10 +707,21 @@ export function renderParseTrendCharts({
     "Total Parses",
     true
   );
+  logTrendChartTiming({
+    chartTitle: "Parse Volume Trend",
+    containerId: totalContainerId,
+    prepDurationMs,
+    plotStart: totalPlotStart,
+    plotPromise: totalPromise,
+    rows: filteredRows.length,
+    traces: totalTraces.length,
+    signatureData: buildLogSignatureFromFilters(filters),
+  });
   const deltaAnnotations = generateYearAnnotations(compactDates, dateLabels, {
     singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
   });
-  plotChartWithLayout(
+  const deltaPlotStart = performance.now();
+  const deltaPromise = plotChartWithLayout(
     deltaTraces,
     deltaContainer,
     dateLabels,
@@ -699,6 +730,16 @@ export function renderParseTrendCharts({
     "Delta Parses",
     true
   );
+  logTrendChartTiming({
+    chartTitle: "Parse Delta Trend",
+    containerId: deltaContainerId,
+    prepDurationMs,
+    plotStart: deltaPlotStart,
+    plotPromise: deltaPromise,
+    rows: filteredRows.length,
+    traces: deltaTraces.length,
+    signatureData: buildLogSignatureFromFilters(filters),
+  });
 }
 
 /**
@@ -724,6 +765,7 @@ export function renderComparisonLineChart(
   referencePercentile,
   comparePercentiles
 ) {
+  const prepStart = performance.now();
   const isDPS = titleSuffix.toLowerCase().includes("dps");
   const selectedNames = getSelectedJobNames(filters);
   const jobNamesToUse = isDPS
@@ -732,6 +774,7 @@ export function renderComparisonLineChart(
 
   // Organize input into: { job -> { date -> { percentile -> value } } }
   const byJobDate = {};
+  let matchedRowCount = 0;
 
   data.forEach((row) => {
     const rowJob = row.job ?? row.class;
@@ -739,6 +782,7 @@ export function renderComparisonLineChart(
       if (!filters.boss || row.boss === filters.boss) {
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
           if (jobNamesToUse.includes(rowJob)) {
+            matchedRowCount++;
             if (!byJobDate[rowJob]) byJobDate[rowJob] = {};
             if (!byJobDate[rowJob][row.date]) byJobDate[rowJob][row.date] = {};
             byJobDate[rowJob][row.date][row.percentile] = isDPS
@@ -837,7 +881,10 @@ export function renderComparisonLineChart(
     singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
   });
 
-  plotChartWithLayout(
+  const prepDurationMs = performance.now() - prepStart;
+  const containerId = container?.id || "comparison-chart";
+  const plotStart = performance.now();
+  const plotPromise = plotChartWithLayout(
     traces,
     container,
     sortedDateLabels,
@@ -845,6 +892,103 @@ export function renderComparisonLineChart(
     annotations,
     "Difference"
   );
+  logTrendChartTiming({
+    chartTitle: titleSuffix,
+    containerId,
+    prepDurationMs,
+    plotStart,
+    plotPromise,
+    rows: matchedRowCount,
+    traces: traces.length,
+    signatureData: buildLogSignatureFromFilters(filters, {
+      reference:
+        referencePercentile === undefined ? null : Number(referencePercentile),
+      compare: Array.isArray(comparePercentiles)
+        ? comparePercentiles.slice().sort((a, b) => a - b)
+        : [],
+    }),
+  });
+}
+
+const lastRenderSignatures = new Map();
+
+function logTrendChartTiming({
+  chartTitle,
+  containerId,
+  prepDurationMs,
+  plotStart,
+  plotPromise,
+  rows,
+  traces,
+  signatureData,
+}) {
+  const signaturePayload = {
+    chartTitle,
+    containerId,
+    rows,
+    traces,
+    signatureData,
+  };
+  const newSignature = JSON.stringify(signaturePayload);
+  const previousSignature = lastRenderSignatures.get(containerId);
+  const shouldLog = previousSignature !== newSignature;
+  if (shouldLog) {
+    lastRenderSignatures.set(containerId, newSignature);
+    logger.debug(
+      `[Trend] ${chartTitle} data inputs (container=${containerId}, filteredRows=${rows}, plotlyTraceCount=${traces})`
+    );
+  }
+
+  const logSummary = (status, error) => {
+    const prepDuration = prepDurationMs.toFixed(1);
+    const plotDuration = (performance.now() - plotStart).toFixed(1);
+    const prefix =
+      status === "error"
+        ? `[Trend] ${chartTitle} render failed`
+        : `[Trend] ${chartTitle} render completed`;
+    const message = `${prefix} (container=${containerId}, data prep=${prepDuration}ms, Plotly render=${plotDuration}ms)`;
+    if (status === "error") {
+      logger.warn(message, error);
+    } else if (shouldLog) {
+      logger.info(message);
+    }
+  };
+
+  if (plotPromise && typeof plotPromise.then === "function") {
+    plotPromise
+      .then(() => logSummary("success"))
+      .catch((error) => logSummary("error", error));
+  } else {
+    logSummary("success");
+  }
+}
+
+function buildLogSignatureFromFilters(filters = {}, extra = {}) {
+  const normalizeValue = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.slice();
+    if (value instanceof Set) return Array.from(value);
+    return [value];
+  };
+  const jobNames = normalizeValue(filters.jobNames).sort();
+  let percentile = null;
+  const percentileRaw = filters.percentile;
+  if (
+    percentileRaw !== undefined &&
+    percentileRaw !== null &&
+    percentileRaw !== ""
+  ) {
+    const parsed = Number(percentileRaw);
+    percentile = Number.isNaN(parsed) ? null : parsed;
+  }
+  return {
+    raid: filters.raid || "",
+    boss: filters.boss || "",
+    percentile,
+    dps_type: filters.dps_type || null,
+    jobNames,
+    ...extra,
+  };
 }
 
 /**
@@ -1177,7 +1321,7 @@ function plotChartWithLayout(
     },
     hoverlabel: createHoverLabelTheme(),
   };
-  Plotly.newPlot(container, traces, layout, { responsive: true });
+  return Plotly.newPlot(container, traces, layout, { responsive: true });
 }
 
 /**
