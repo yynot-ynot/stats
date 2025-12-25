@@ -216,7 +216,7 @@ function updateComparisonCharts(state) {
 
   // Must have: reference percentile AND at least one comparison percentile
   const referenceOk =
-    selectedReferencePercentile && selectedReferencePercentile !== "All";
+    hasValidReferencePercentile(selectedReferencePercentile);
   const compPercentiles =
     selectedComparisonPercentiles instanceof Set
       ? Array.from(selectedComparisonPercentiles).filter((v) => v !== "All")
@@ -272,6 +272,22 @@ function updateComparisonCharts(state) {
       compPercentiles.map(Number)
     );
   });
+}
+
+/**
+ * Determine whether the reference percentile selection is valid. Accepts numbers or strings and
+ * treats 0 (Min) as a valid input per the reference-slider plan.
+ * @param {number|string|null|undefined} value
+ * @returns {boolean}
+ */
+function hasValidReferencePercentile(value) {
+  if (value === null || value === undefined) return false;
+  if (value === "All") return false;
+  if (typeof value === "number") return !Number.isNaN(value);
+  if (typeof value === "string") {
+    return value.trim() !== "";
+  }
+  return Boolean(value);
 }
 
 /**
@@ -427,3 +443,7 @@ export function toggleTrendViewVisibility(hasJobSelection) {
     }
   }
 }
+
+export const __comparisonTestUtils = {
+  hasValidReferencePercentile,
+};

@@ -28,6 +28,10 @@ export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
     if (filters?.raid && row.raid !== filters.raid) return false;
     if (filters?.boss && row.boss !== filters.boss) return false;
     if (filters?.dps_type && row.dps_type !== filters.dps_type) return false;
+    const percentileValue = Number(row.percentile);
+    // Ignore 0th percentile rows so the percentile view charts and scaling skip them entirely,
+    // preventing their extremely low values from flattening the y-axis when comparing other percentiles.
+    if (Number.isNaN(percentileValue) || percentileValue === 0) return false;
     return typeof row[valueKey] === "number";
   });
 

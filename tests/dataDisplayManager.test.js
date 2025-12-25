@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { toggleTrendViewVisibility } from "../js/logic/dataDisplayManager.js";
+import {
+  toggleTrendViewVisibility,
+  __comparisonTestUtils,
+} from "../js/logic/dataDisplayManager.js";
+
+const { hasValidReferencePercentile } = __comparisonTestUtils;
 
 function createElementWithClassList(initialClasses = []) {
   const classes = new Set(initialClasses);
@@ -135,4 +140,13 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
   } finally {
     global.document = originalDocument;
   }
+});
+
+test("hasValidReferencePercentile treats Min/Max selections as valid numbers", () => {
+  assert.equal(hasValidReferencePercentile(0), true);
+  assert.equal(hasValidReferencePercentile(100), true);
+  assert.equal(hasValidReferencePercentile("0"), true);
+  assert.equal(hasValidReferencePercentile(""), false);
+  assert.equal(hasValidReferencePercentile(null), false);
+  assert.equal(hasValidReferencePercentile("All"), false);
 });

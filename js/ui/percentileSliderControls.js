@@ -3,9 +3,36 @@ import { updateFilterValue } from "../shared/filterState.js";
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("percentileSliderControls");
 
+// These helpers keep the proportional slider implementation generic while allowing specialized
+// sliders (like the reference slider) to opt into presentation tweaks outlined in the plan.
+const REFERENCE_SLIDER_VISUAL_MAX = 110;
+
+/**
+ * Default label formatter so callers that do not need custom copy can avoid touching the helper.
+ * The reference slider overrides this to surface "Min"/"Max" without branching inside the UI code.
+ * @param {number} value
+ * @returns {string}
+ */
+function defaultLabelFormatter(value) {
+  return String(value);
+}
+
+/**
+ * Identity transformer applied when no slider needs to alter the proportional map. The reference
+ * slider passes its own transformer so it can space 0/100 as if they were 0/110 without affecting
+ * other sliders.
+ * @param {Object} positions
+ * @returns {Object}
+ */
+function identityPositionTransformer(positions) {
+  return positions;
+}
+
 /**
  * Given a sorted array of values, compute the proportional position (0–100) for each value,
- * using a fixed [0,100] range. Values outside [0,100] are logged and excluded.
+ * using a fixed [0,100] range. Values outside [0,100] are logged and excluded. Callers may feed
+ * the result into a transformer hook when they need presentation-specific tweaks (e.g., the plan's
+ * reference slider spacing adjustment).
  * @param {number[]} values - Sorted array of values (e.g. percentiles)
  * @returns {Object} Map of value → percent position (0–100)
  */
@@ -70,8 +97,9 @@ export function setupPercentileSlider(percentiles) {
 }
 
 /**
- * Setup a native range slider for reference percentile with proportional tick marks and custom thumb.
- * UI and functionality matches setupPercentileSlider but writes to selectedReferencePercentile.
+ * Setup the reference percentile slider. Mirrors the main slider behavior but opts into the plan's
+ * "Min/Max with extended spacing" requirement via the new formatter/transformer hooks so other
+ * sliders remain untouched.
  *
  * @param {Set<string>} percentiles - Set of available percentile values (as strings)
  */
@@ -103,7 +131,43 @@ export function setupReferencePercentileSlider(percentiles) {
     percentiles: sortedPercentiles,
     defaultValue: Number(DEFAULTS["percentile-reference-select"]),
     logger,
+    valueLabelFormatter: formatReferenceSliderLabel,
+    positionTransformer: transformReferenceSliderPositions,
   });
+}
+
+/**
+ * Format reference slider endpoints as "Min"/"Max" per the planning note so the UI communicates
+ * intent without changing the numeric values pushed into filter state.
+ * @param {number} value
+ * @returns {string}
+ */
+function formatReferenceSliderLabel(value) {
+  if (value === 0) return "Min";
+  if (value === 100) return "Max";
+  return String(value);
+}
+
+/**
+ * Stretch the visual spacing for the reference slider so 100 behaves as if the dataset extended to
+ * 110. Other sliders continue to share the default proportional spacing, keeping the plan scoped.
+ * @param {Object} basePositions - Map of percentile → base proportional percent (0-100)
+ * @param {number[]} percentiles - Sorted percentile list to ensure every key updates
+ * @returns {Object} New positions map with 100 shifted as if it were 110
+ */
+function transformReferenceSliderPositions(basePositions, percentiles) {
+  const positions = { ...basePositions };
+  percentiles.forEach((value) => {
+    const stretchedValue =
+      value === 100 ? REFERENCE_SLIDER_VISUAL_MAX : value;
+    const boundedValue = Math.max(
+      0,
+      Math.min(stretchedValue, REFERENCE_SLIDER_VISUAL_MAX)
+    );
+    positions[value] =
+      (boundedValue / REFERENCE_SLIDER_VISUAL_MAX) * 100;
+  });
+  return positions;
 }
 
 /**
@@ -141,11 +205,17 @@ export function setupComparisonPercentileSlider(percentiles) {
    */
   function renderLabels() {
     labelRow.innerHTML = "";
-    const positions = getProportionalPositions(sortedPercentiles);
+    // Keep the clickable comparison labels visually locked to the reference slider ticks so the
+    // "Min/Max with stretched spacing" requirement stays consistent across both UI elements.
+    const basePositions = getProportionalPositions(sortedPercentiles);
+    const positions = transformReferenceSliderPositions(
+      basePositions,
+      sortedPercentiles
+    );
     sortedPercentiles.forEach((val, idx) => {
       const label = document.createElement("span");
       label.className = "comparison-value-label";
-      label.textContent = val;
+      label.textContent = formatReferenceSliderLabel(val);
       label.style.position = "absolute";
       label.style.left = `${positions[val]}%`; // Place at proportional position
       label.style.transform = "translateX(-50%)"; // Center label horizontally
@@ -185,6 +255,8 @@ export function setupComparisonPercentileSlider(percentiles) {
 /**
  * Helper to initialize and manage a proportional percentile slider UI.
  * Handles tick and label rendering, custom thumb movement, and filter state update.
+ * Accepts optional label formatter/position transformer hooks so specialized sliders (like the
+ * reference slider) can tweak presentation without introducing ad-hoc logic elsewhere.
  *
  * @param {Object} options - Slider configuration.
  * @param {HTMLElement} container - The container element to render in.
@@ -193,6 +265,8 @@ export function setupComparisonPercentileSlider(percentiles) {
  * @param {number[]} percentiles - Sorted array of percentiles (numbers).
  * @param {number} defaultValue - Default percentile value.
  * @param {function} logger - Logger for warning/info.
+ * @param {function} [valueLabelFormatter] - Optional formatter for tick labels.
+ * @param {function} [positionTransformer] - Optional proportional map transformer.
  */
 function initPercentileSliderUI({
   container,
@@ -201,6 +275,8 @@ function initPercentileSliderUI({
   percentiles,
   defaultValue,
   logger,
+  valueLabelFormatter = defaultLabelFormatter,
+  positionTransformer = identityPositionTransformer,
 }) {
   if (percentiles.length === 0) {
     logger.warn(`No percentiles provided to slider UI (${sliderSelector}).`);
@@ -216,22 +292,28 @@ function initPercentileSliderUI({
   slider.max = 100;
   slider.step = 1; // or finer if desired
 
+  const basePositions = getProportionalPositions(percentiles);
+  const positions =
+    positionTransformer(basePositions, percentiles) ?? basePositions;
+
   // Find proportional value for defaultValue
-  let defaultPercent = getProportionalPositions(percentiles)[defaultValue];
+  let defaultPercent = positions[defaultValue];
   if (defaultPercent === undefined) {
     logger.warn(
       `Default value (${defaultValue}) not found in percentiles: [${percentiles.join(
         ", "
       )}]. Falling back to first item.`
     );
-    defaultPercent = 0;
+    const fallbackPercentile = percentiles[0];
+    defaultPercent =
+      fallbackPercentile !== undefined
+        ? positions[fallbackPercentile] ?? 0
+        : 0;
   }
   slider.value = String(defaultPercent);
   // Find closest index for rendering tick highlights
   let currentIdx = percentiles.indexOf(defaultValue);
   if (currentIdx === -1) currentIdx = 0;
-
-  const positions = getProportionalPositions(percentiles);
 
   // Render ticks and labels
   overlay.innerHTML = "";
@@ -244,7 +326,7 @@ function initPercentileSliderUI({
 
     const label = document.createElement("span");
     label.className = "slider-tick-label";
-    label.textContent = percentile;
+    label.textContent = valueLabelFormatter(percentile);
     label.style.left = `calc(${percent}% )`;
     if (idx === currentIdx) label.classList.add("visible");
     overlay.appendChild(tick);
@@ -265,16 +347,16 @@ function initPercentileSliderUI({
   slider.addEventListener("input", (e) => {
     const value = parseFloat(e.target.value);
     // Find closest percentile to the slider value
-    const closest = findClosestPercentile(value, percentiles);
+    const closest = findClosestPercentile(value, percentiles, positions);
     const idx = percentiles.indexOf(closest);
-    updateCustomThumbByValue(value, percentiles, positions, thumb); // Move thumb visually to current value
+    updateCustomThumbByValue(value, thumb); // Move thumb visually to current value
     highlightTickAndLabel(idx, overlay, true); // Optionally show a preview
   });
 
   // On change: snap to nearest allowed percentile, update state
   slider.addEventListener("change", (e) => {
     const value = parseFloat(e.target.value);
-    const closest = findClosestPercentile(value, percentiles);
+    const closest = findClosestPercentile(value, percentiles, positions);
     const idx = percentiles.indexOf(closest);
     // Snap slider to the allowed value
     slider.value = String(positions[closest]);
@@ -298,28 +380,32 @@ function initPercentileSliderUI({
 }
 
 /**
- * Find the closest percentile value in the array to a given slider position.
+ * Find the closest percentile value in the array to a given slider position, reusing the caller's
+ * positions map so plan-specific spacing overrides (like the reference slider stretch) remain
+ * consistent for all interactions.
  * @param {number} sliderValue - Value from the slider (0–100)
  * @param {number[]} percentiles - Sorted array of allowed percentiles
+ * @param {Object} positions - Map of percentile → proportional percent
  * @returns {number} Closest percentile
  */
-function findClosestPercentile(sliderValue, percentiles) {
-  return percentiles.reduce((prev, curr) =>
-    Math.abs(getProportionalPositions(percentiles)[curr] - sliderValue) <
-    Math.abs(getProportionalPositions(percentiles)[prev] - sliderValue)
+function findClosestPercentile(sliderValue, percentiles, positions) {
+  return percentiles.reduce((prev, curr) => {
+    const currPos = positions[curr];
+    const prevPos = positions[prev];
+    if (currPos === undefined) return prev;
+    if (prevPos === undefined) return curr;
+    return Math.abs(currPos - sliderValue) < Math.abs(prevPos - sliderValue)
       ? curr
-      : prev
-  );
+      : prev;
+  });
 }
 
 /**
  * Move the custom thumb overlay to the current slider value (not snapped).
  * @param {number} value - Slider value (0–100)
- * @param {number[]} percentiles
- * @param {Object} positions - Map of percentile→position
  * @param {HTMLElement} thumb - The thumb element
  */
-function updateCustomThumbByValue(value, percentiles, positions, thumb) {
+function updateCustomThumbByValue(value, thumb) {
   // Just use the slider value directly
   thumb.style.left = `calc(${value}% )`;
 }
@@ -383,3 +469,12 @@ export function setComparisonSliderValues(values, options = {}) {
   }
   container.__setComparisonValues(values, options);
 }
+
+/**
+ * Internal helper accessors so node:test suites can verify the reference slider overrides stay in
+ * sync with the documented plan without importing private functions directly in production code.
+ */
+export const __referenceSliderOverrides = {
+  formatReferenceSliderLabel,
+  transformReferenceSliderPositions,
+};

@@ -113,17 +113,30 @@ function parseCompactDate(dateStr) {
 }
 
 /**
- * Filter the dataset based on provided filter values.
- * Optionally expands any paired/composite job names in the jobNames filter
- * (used for HPS; not for DPS). Non-paired jobs are always included as-is.
+ * Filter the dataset using UI selections and optionally expand paired healers.
  *
- * @param {Array<Object>} data - Full dataset.
- * @param {Object} filters - Filter criteria.
- * @param {boolean} [expandPairs=false] - Whether to expand paired/composite job names.
- * @returns {Array<Object>} Filtered dataset.
+ * The trend view feeds string inputs (e.g., "0", "25") into `filters.percentile`.
+ * Because `0` is a valid percentile but falsy, we normalize the value up front
+ * so the calling charts render the correct percentile buckets instead of
+ * silently skipping 0th-percentile rows.
+ *
+ * @param {Array<Object>} data - Raw DPS/HPS rows.
+ * @param {Object} filters - UI filters (raid, boss, percentile, dps_type, job names).
+ * @param {boolean} [expandPairs=false] - Expand healer pairings into individual jobs.
+ * @returns {Array<Object>} Filtered dataset tailored for the target chart.
  */
-function applyFilters(data, filters, expandPairs = false) {
+export function applyFilters(data, filters, expandPairs = false) {
   const { raid, boss, percentile, dps_type } = filters;
+  // Normalize the percentile slider input so "0" remains a valid filter instead
+  // of being dropped by JavaScript's falsy checks.
+  const percentileValue =
+    percentile === undefined || percentile === null || percentile === ""
+      ? null
+      : Number(percentile);
+  const percentileFilter =
+    percentileValue === null || Number.isNaN(percentileValue)
+      ? null
+      : percentileValue;
   const selectedNames = getSelectedJobNames(filters);
   const namesToUse = expandPairs
     ? expandSelectedJobs(selectedNames)
@@ -133,7 +146,7 @@ function applyFilters(data, filters, expandPairs = false) {
     return (
       (!raid || entry.raid === raid) &&
       (!boss || entry.boss === boss) &&
-      (!percentile || entry.percentile === Number(percentile)) &&
+      (percentileFilter === null || entry.percentile === percentileFilter) &&
       namesToUse.includes(entryJob) &&
       (!dps_type || entry.dps_type === dps_type)
     );
