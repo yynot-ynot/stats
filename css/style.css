@@ -57,6 +57,36 @@ body {
   text-align: center;
 }
 
+.percentile-max-toggle-btn {
+  width: 100%;
+  margin-bottom: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #2d3a44;
+  background: #1f2429;
+  color: #7cc7ff;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  font-weight: 600;
+}
+
+.percentile-max-toggle-btn[aria-pressed="false"] {
+  color: #c7d7ff;
+  background: #2b3238;
+  box-shadow: none;
+}
+
+.percentile-max-toggle-btn[aria-pressed="true"] {
+  background: #0f3c63;
+  color: #fff;
+  border-color: #4da3ff;
+  box-shadow: 0 0 10px #4da3ff55;
+}
+
+.percentile-max-toggle-btn:hover {
+  background: #2a3137;
+}
+
 .percentile-date-slider label {
   display: block;
   margin-bottom: 0.5rem;

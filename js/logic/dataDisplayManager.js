@@ -308,8 +308,10 @@ function hasValidReferencePercentile(value) {
 }
 
 /**
- * Render the DPS/HPS percentile charts when the Percentile view is active.
- * Falls back to helper messaging when required filters are not selected or data is missing.
+ * Render the new percentile view charts whenever filters or view state change.
+ * Ensures prerequisites (raid/boss/jobs) exist, configures data filters for DPS/HPS,
+ * and passes the includeMaxPercentile flag through so the toggle can hide the 100th bucket
+ * before delegating to the shared chart renderer.
  * @param {Object} state
  */
 function updatePercentileCharts(state) {
@@ -352,6 +354,7 @@ function updatePercentileCharts(state) {
     boss: state.selectedBoss,
     jobNames,
   };
+  const includeMaxPercentile = state.showMaxPercentile !== false;
   const dpsData = globalData.filter((row) => "dps" in row);
   const hpsData = globalData.filter((row) => "hps" in row);
   const dpsMetricLabel = formatDpsMetricTitle(state.selectedDpsType);
@@ -366,6 +369,7 @@ function updatePercentileCharts(state) {
       hpsContainer,
       dpsLabel: dpsMetricLabel,
       targetDate: state.selectedPercentileDate,
+      includeMaxPercentile,
     });
     if (!result.renderedAny) {
       showMessage("No percentile data available for the current selection.");

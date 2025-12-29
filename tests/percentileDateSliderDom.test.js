@@ -4,6 +4,11 @@ import assert from "node:assert/strict";
 import { setupPercentileDateSlider } from "../js/ui/percentileDateSlider.js";
 import { filterState } from "../js/shared/filterState.js";
 
+/**
+ * Build a minimal DOM-like structure so setupPercentileDateSlider can run in tests.
+ * Provides stubbed slider/label/toggle elements with addEventListener/setAttribute hooks.
+ * @returns {{slider: Object, label: Object, toggleButton: Object, container: Object}}
+ */
 function createMockSliderEnvironment() {
   const slider = {
     value: "0",
@@ -13,15 +18,24 @@ function createMockSliderEnvironment() {
     },
   };
   const label = { textContent: "" };
+  const toggleButton = {
+    textContent: "",
+    attributes: {},
+    addEventListener() {},
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+  };
   const container = {
     innerHTML: "",
     querySelector(selector) {
       if (selector === "#percentile-date-slider") return slider;
       if (selector === ".percentile-date-display") return label;
+      if (selector === "#percentile-max-toggle") return toggleButton;
       return null;
     },
   };
-  return { slider, label, container };
+  return { slider, label, toggleButton, container };
 }
 
 /**

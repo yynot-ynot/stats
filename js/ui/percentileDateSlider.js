@@ -14,6 +14,7 @@ const logger = getLogger("percentileDateSlider");
 let availableDates = [];
 let sliderEl = null;
 let labelEl = null;
+let maxToggleButtonEl = null;
 let hasSubscribed = false;
 let isInternalUpdate = false;
 let dateToPosition = new Map();
@@ -49,12 +50,19 @@ export function setupPercentileDateSlider(dates) {
   }
 
   container.innerHTML = `
+    <button
+      id="percentile-max-toggle"
+      type="button"
+      class="percentile-max-toggle-btn"
+      aria-pressed="false"
+    >Show/Hide 100th Percentile</button>
     <label for="percentile-date-slider">Select Date</label>
     <input id="percentile-date-slider" type="range" min="0" max="100" step="0.1" />
     <div class="percentile-date-display"></div>
   `;
   sliderEl = container.querySelector("#percentile-date-slider");
   labelEl = container.querySelector(".percentile-date-display");
+  maxToggleButtonEl = container.querySelector("#percentile-max-toggle");
   dateToPosition = buildPositions(availableDates);
 
   const state = getCurrentFilterState();
@@ -62,6 +70,7 @@ export function setupPercentileDateSlider(dates) {
   setSliderToDate(initialDate, {
     updateFilter: state.selectedPercentileDate !== initialDate,
   });
+  updateMaxToggleUi(shouldShowMaxPercentile(state));
 
   /**
    * Continuously emit filter updates as the user drags the slider so charts refresh in real time.
@@ -76,6 +85,13 @@ export function setupPercentileDateSlider(dates) {
 
   sliderEl.addEventListener("input", updateFromSlider);
   sliderEl.addEventListener("change", updateFromSlider);
+  if (maxToggleButtonEl) {
+    maxToggleButtonEl.addEventListener("click", () => {
+      const currentState = getCurrentFilterState();
+      const nextValue = !shouldShowMaxPercentile(currentState);
+      updateFilterValue("showMaxPercentile", nextValue);
+    });
+  }
 
   if (!hasSubscribed) {
     subscribeToFilterChanges((state, change) => {
@@ -85,6 +101,9 @@ export function setupPercentileDateSlider(dates) {
       const shouldUpdateFilter =
         !isDateChange && state.selectedPercentileDate !== resolved;
       setSliderToDate(resolved, { updateFilter: shouldUpdateFilter });
+      if (!change || change.key === "showMaxPercentile") {
+        updateMaxToggleUi(shouldShowMaxPercentile(state));
+      }
     });
     hasSubscribed = true;
   }
@@ -122,6 +141,17 @@ function setSliderToDate(date, { updateFilter }) {
 function updateDisplay(date) {
   if (!labelEl) return;
   labelEl.textContent = formatDateLabel(date);
+}
+
+/**
+ * Sync the 100th-percentile toggle button with the active filter state by
+ * updating the aria-pressed attribute; the label remains static per UX request
+ * while styling conveys the enabled/disabled state.
+ * @param {boolean} isVisible - Whether the 100th percentile is currently included.
+ */
+function updateMaxToggleUi(isVisible) {
+  if (!maxToggleButtonEl) return;
+  maxToggleButtonEl.setAttribute("aria-pressed", String(isVisible));
 }
 
 function formatDateLabel(compact) {
@@ -168,4 +198,14 @@ function getNearestDate(value) {
     }
   }
   return nearest;
+}
+
+/**
+ * Determine if the percentile charts should include the 100th percentile bucket.
+ * Defaults to hiding the max when the toggle has never been touched.
+ * @param {Object} state
+ * @returns {boolean}
+ */
+function shouldShowMaxPercentile(state = {}) {
+  return state.showMaxPercentile !== false;
 }

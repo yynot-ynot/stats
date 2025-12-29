@@ -13,9 +13,14 @@ const logger = getLogger("percentileDataUtils");
  * @param {Object} options - Additional settings.
  * @param {string} options.valueKey - The numeric field to read (e.g., "dps" or "hps").
  * @param {string} [options.targetDate] - Preferred compact date (YYYYMMDD). Defaults to latest available.
+ * @param {boolean} [options.includeMaxPercentile=true] - Whether to include 100th percentile rows.
  * @returns {{ selectedDate: (string|null), buckets: number[], series: Map<string, Map<number, number>>, valueRange: ({min: number, max: number}|null) }}
  */
-export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
+export function buildPercentileSeries(
+  data,
+  filters,
+  { valueKey, targetDate, includeMaxPercentile = true } = {}
+) {
   if (!Array.isArray(data) || data.length === 0) {
     return createEmptySeriesResult();
   }
@@ -32,6 +37,7 @@ export function buildPercentileSeries(data, filters, { valueKey, targetDate }) {
     // Ignore 0th percentile rows so the percentile view charts and scaling skip them entirely,
     // preventing their extremely low values from flattening the y-axis when comparing other percentiles.
     if (Number.isNaN(percentileValue) || percentileValue === 0) return false;
+    if (!includeMaxPercentile && percentileValue === 100) return false;
     return typeof row[valueKey] === "number";
   });
 

@@ -14,6 +14,7 @@ export const filterState = {
   selectedComparisonPercentiles: new Set(),
   selectedJobs: new Set(),
   selectedPercentileDate: "",
+  showMaxPercentile: false,
   listeners: new Set(),
 };
 

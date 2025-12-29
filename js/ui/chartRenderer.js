@@ -992,7 +992,8 @@ function buildLogSignatureFromFilters(filters = {}, extra = {}) {
 }
 
 /**
- * Render the DPS and HPS percentile charts using the most recent date in the dataset.
+ * Render the DPS and HPS percentile charts, optionally pinning to a specific date and
+ * honoring the includeMaxPercentile flag so the UI can hide the 100th percentile entirely.
  * @param {Object} params
  * @param {Array<Object>} params.dpsData
  * @param {Array<Object>} params.hpsData
@@ -1002,6 +1003,7 @@ function buildLogSignatureFromFilters(filters = {}, extra = {}) {
  * @param {HTMLElement} params.hpsContainer
  * @param {string} params.dpsLabel
  * @param {string} [params.targetDate] - Preferred YYYYMMDD percentile snapshot to render.
+ * @param {boolean} [params.includeMaxPercentile=true] - Whether to include the 100th percentile row set.
  * @returns {{renderedAny: boolean, selectedIsoDate: (string|null)}}
  */
 export function renderPercentileCharts({
@@ -1013,6 +1015,7 @@ export function renderPercentileCharts({
   hpsContainer,
   dpsLabel,
   targetDate,
+  includeMaxPercentile = true,
 }) {
   const dpsResult = renderSinglePercentileChart({
     data: dpsData,
@@ -1021,6 +1024,7 @@ export function renderPercentileCharts({
     valueKey: "dps",
     metricLabel: dpsLabel || "DPS",
     targetDate,
+    includeMaxPercentile,
   });
   hpsContainer.previousElementSibling.textContent = "Healing Percentile";
   const hpsResult = renderSinglePercentileChart({
@@ -1030,6 +1034,7 @@ export function renderPercentileCharts({
     valueKey: "hps",
     metricLabel: "Healing",
     targetDate,
+    includeMaxPercentile,
   });
   dpsContainer.previousElementSibling.textContent = `${
     dpsLabel || "DPS"
@@ -1047,6 +1052,7 @@ export function renderPercentileCharts({
  * rendered ISO date into the Plotly title so the percentile view does not need a separate label.
  * @param {Object} options
  * @param {string} [options.targetDate] - Preferred compact date; falls back to most recent snapshot.
+ * @param {boolean} [options.includeMaxPercentile=true] - Whether to keep the 100th percentile rows in bucket calculations.
  * @returns {{rendered: boolean, isoDate: (string|null)}}
  */
 function renderSinglePercentileChart({
@@ -1056,6 +1062,7 @@ function renderSinglePercentileChart({
   valueKey,
   metricLabel,
   targetDate,
+  includeMaxPercentile = true,
 }) {
   if (!container) return { rendered: false, isoDate: null };
   const { selectedDate, buckets, series, valueRange } = buildPercentileSeries(
@@ -1064,6 +1071,7 @@ function renderSinglePercentileChart({
     {
       valueKey,
       targetDate,
+      includeMaxPercentile,
     }
   );
   const isoDate = selectedDate ? toISODate(selectedDate) : null;
@@ -1078,6 +1086,9 @@ function renderSinglePercentileChart({
   const normalizedStart = Math.max(minPercentile - 3, 0) / 100;
   const normalizedEnd = Math.min(maxPercentile + 3, 100) / 100;
   const positions = buckets.map((pct) => pct / 100);
+  // When the 100th percentile toggle is on, always slant tick labels so the UI
+  // matches the design reference even if the current dataset lacks a 100th bucket.
+  const shouldSlantTicks = includeMaxPercentile;
   const traces = [];
   series.forEach((percentileMap, jobName) => {
     const yValues = buckets.map((pct) =>
@@ -1125,6 +1136,7 @@ function renderSinglePercentileChart({
       tickmode: "array",
       tickvals: buckets.map((pct) => pct / 100),
       ticktext: buckets.map((pct) => getOrdinal(pct)),
+      tickangle: shouldSlantTicks ? -35 : undefined,
       title: "Percentile",
       color: "#FFFFFF",
       tickfont: { color: "#CCCCCC" },

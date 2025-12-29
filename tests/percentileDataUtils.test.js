@@ -68,6 +68,28 @@ test("buildPercentileSeries excludes 0th percentile rows from buckets and range"
   assert.deepEqual(result.valueRange, { min: 200, max: 400 });
 });
 
+/**
+ * Validates that buildPercentileSeries discards 100th-percentile rows entirely when
+ * the caller opts out via includeMaxPercentile=false, ensuring both buckets and the
+ * derived min/max range reflect only the lower percentiles.
+ */
+test("buildPercentileSeries omits 100th percentile rows when includeMaxPercentile=false", () => {
+  const data = [
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 50, date: "20240201", dps: 200 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 75, date: "20240201", dps: 500 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 100, date: "20240201", dps: 800 },
+    { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 100, date: "20240101", dps: 1000 },
+  ];
+  const result = buildPercentileSeries(
+    data,
+    { raid: "Eden", boss: "Prime", jobNames: ["Warrior"] },
+    { valueKey: "dps", includeMaxPercentile: false }
+  );
+  assert.deepEqual(result.buckets, [50, 75]);
+  assert.equal(result.series.get("Warrior").get(100), undefined);
+  assert.deepEqual(result.valueRange, { min: 200, max: 500 });
+});
+
 test("buildPercentileSeries handles dps_type filter", () => {
   const data = [
     { raid: "Eden", boss: "Prime", class: "Warrior", percentile: 50, date: "20240201", dps_type: "rdps", dps: 1500 },
