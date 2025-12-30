@@ -768,6 +768,10 @@ function setupSidebarCollapseHandlers(
 
   // Collapse sidebar when clicking anywhere outside sidebar or labelContainer
   document.addEventListener("click", function (event) {
+    if (touchSessionActive) {
+      // Ignore outside clicks while a sidebar touch gesture is still active.
+      return;
+    }
     if (
       !isCollapsed() &&
       !sidebar.contains(event.target) &&
@@ -784,6 +788,10 @@ function setupSidebarCollapseHandlers(
     function () {
       const mouseElement = document.elementFromPoint(mouseX, mouseY);
 
+      if (touchSessionActive) {
+        // Active touch session means the user is dragging inside the sidebar; keep it visible.
+        return;
+      }
       if (!isCollapsed() && !mouseOverSidebar && shouldAutoCollapse()) {
         logger.info(
           "[Sidebar] Collapsing sidebar due to window scroll and mouse not over sidebar."
@@ -794,16 +802,66 @@ function setupSidebarCollapseHandlers(
     { capture: true, passive: true }
   );
 
-  // --- Touch scroll elsewhere collapse for mobile devices ---
-
+  // --- Touch session tracking guards ---
+  // The sidebar should remain open while a user drags/scrolls inside it on touch devices.
+  // Track whether the current active touches originated within the sidebar so we can
+  // suppress passive collapse triggers until the last finger lifts.
   let touchScrollStartedInsideSidebar = false;
   let touchStarted = false;
+  let touchSessionActive = false;
+  let activeSidebarTouchCount = 0;
+
+  /**
+   * Mark the beginning of an interaction that started inside the sidebar.
+   * Uses changedTouches count so multi-touch gestures keep the session alive
+   * until all involved touches end.
+   */
+  function beginTouchSession(event) {
+    const delta =
+      event && event.changedTouches && event.changedTouches.length > 0
+        ? event.changedTouches.length
+        : 1;
+    activeSidebarTouchCount += delta;
+    touchSessionActive = activeSidebarTouchCount > 0;
+  }
+
+  /**
+   * Reduce the tracked touch count when touches that started inside finish.
+   * Once no fingers remain, collapse guards are lifted.
+   */
+  function endTouchSession(event) {
+    const delta =
+      event && event.changedTouches && event.changedTouches.length > 0
+        ? event.changedTouches.length
+        : 1;
+    activeSidebarTouchCount = Math.max(0, activeSidebarTouchCount - delta);
+    if (activeSidebarTouchCount === 0) {
+      touchSessionActive = false;
+    }
+  }
 
   sidebar.addEventListener(
     "touchstart",
     function (e) {
       touchScrollStartedInsideSidebar = true;
       touchStarted = true;
+      beginTouchSession(e);
+    },
+    { passive: true }
+  );
+
+  sidebar.addEventListener(
+    "touchend",
+    function (e) {
+      endTouchSession(e);
+    },
+    { passive: true }
+  );
+
+  sidebar.addEventListener(
+    "touchcancel",
+    function (e) {
+      endTouchSession(e);
     },
     { passive: true }
   );
@@ -811,10 +869,29 @@ function setupSidebarCollapseHandlers(
   document.addEventListener(
     "touchstart",
     function (e) {
-      // Only update if touch is outside sidebar
-      if (!sidebar.contains(e.target)) {
-        touchScrollStartedInsideSidebar = false;
-        touchStarted = true;
+      if (sidebar.contains(e.target)) {
+        // Touch targets inside the sidebar already registered via the sidebar listener.
+        return;
+      }
+      const touchedLabel =
+        labelContainer &&
+        (labelContainer === e.target || labelContainer.contains?.(e.target));
+
+      touchScrollStartedInsideSidebar = false;
+      touchStarted = true;
+
+      if (touchSessionActive) {
+        // Another finger is already manipulating the sidebar; ignore.
+        return;
+      }
+
+      if (
+        !touchedLabel &&
+        !isCollapsed() &&
+        shouldAutoCollapse()
+      ) {
+        logger.info("[Sidebar] Collapsing sidebar due to outside touchstart.");
+        collapseSidebar();
       }
     },
     { passive: true }
@@ -823,6 +900,7 @@ function setupSidebarCollapseHandlers(
   document.addEventListener(
     "touchmove",
     function (e) {
+      if (touchSessionActive) return;
       // Only handle the first touchmove after a touchstart
       if (!touchStarted || !shouldAutoCollapse()) return;
       touchStarted = false;
