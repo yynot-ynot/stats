@@ -286,6 +286,7 @@ function initPercentileSliderUI({
   const slider = container.querySelector(sliderSelector);
   const overlay = container.querySelector(".slider-tick-overlay");
   const thumb = container.querySelector(".slider-thumb-custom");
+  const row = slider?.closest(".percentile-slider-row") ?? null;
 
   // Slider now goes from 0 to 100 (continuous)
   slider.min = 0;
@@ -337,6 +338,31 @@ function initPercentileSliderUI({
     const percentile = percentiles[idx];
     const percent = positions[percentile];
     thumb.style.left = `calc(${percent}% )`;
+  }
+  /**
+   * Allow pointer/touch interactions anywhere within the slider row (including areas
+   * above the native input where the custom thumb overlaps) to move the slider. The
+   * native `<input type="range">` only spans the track height, so clicks on the
+   * diamond's top half would otherwise be ignored. By mapping the pointer position
+   * to a proportional slider value we keep the interaction intuitive.
+   * @param {PointerEvent | MouseEvent | TouchEvent} event
+   */
+  function handleRowPointer(event) {
+    if (!row || !slider) return;
+    if (event.target === slider) return;
+    if (event.button !== undefined && event.button !== 0) return;
+    const rect = row.getBoundingClientRect();
+    const pointerX = event.clientX ?? (event.touches && event.touches[0]?.clientX);
+    if (pointerX === undefined) return;
+    const relative = ((pointerX - rect.left) / rect.width) * 100;
+    const clamped = Math.max(0, Math.min(100, relative));
+    slider.value = String(clamped);
+    // Fire the native events so the existing slider listeners snap/highlight as usual.
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (row) {
+    row.addEventListener("pointerdown", handleRowPointer);
   }
 
   // Initial thumb position and filter state

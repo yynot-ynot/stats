@@ -878,11 +878,11 @@ th {
   margin: 0;
   position: absolute;
   left: 0;
-  top: 0;
+  top: -26px;
   z-index: 2;
   background: transparent;
   pointer-events: auto;
-  height: 44px;
+  height: 70px;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
@@ -982,31 +982,17 @@ th {
 
 .slider-thumb-custom {
   position: absolute;
-  top: -20px;
+  top: -26px;
   left: 0;
   width: 22px;
   height: 40px;
-  background: url('data:image/svg+xml;utf8,<svg width="22" height="40" viewBox="0 0 22 40" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="11,0 22,16 11,40 0,16" fill="url(%23crystalGradient)"/><defs><linearGradient id="crystalGradient" x1="11" y1="0" x2="11" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="%23d8f7ff"/><stop offset="0.45" stop-color="%236bc8ff"/><stop offset="0.7" stop-color="%233897cb"/><stop offset="1" stop-color="%231166aa"/></linearGradient></defs></svg>') no-repeat center center / contain;
+  background: url('data:image/svg+xml;utf8,<svg width="22" height="40" viewBox="0 0 22 40" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="thumbBase" x1="4" y1="6" x2="18" y2="36" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="%23f6fcff"/><stop offset="0.25" stop-color="%23b5d6ff"/><stop offset="0.55" stop-color="%236aa2ef"/><stop offset="0.85" stop-color="%233063b5"/><stop offset="1" stop-color="%23142f63"/></linearGradient><linearGradient id="thumbLeftFacet" x1="6" y1="10" x2="6" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="%23f9fcff" stop-opacity="0.9"/><stop offset="1" stop-color="%23649ad6" stop-opacity="0.7"/></linearGradient><linearGradient id="thumbRightFacet" x1="16" y1="10" x2="16" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="%238ebff9" stop-opacity="0.8"/><stop offset="1" stop-color="%231b3d74" stop-opacity="0.75"/></linearGradient><radialGradient id="thumbSpark" cx="11" cy="11" r="6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="%23ffffff" stop-opacity="0.9"/><stop offset="0.6" stop-color="%23cde4ff" stop-opacity="0.2"/><stop offset="1" stop-color="%23b6d7ff" stop-opacity="0"/></radialGradient><linearGradient id="thumbEdge" x1="0" y1="0" x2="0" y2="40" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="%23f0f6ff"/><stop offset="1" stop-color="%23040a1a"/></linearGradient></defs><polygon points="11,8 21,18 11,40 1,18" fill="url(%23thumbBase)" stroke="url(%23thumbEdge)" stroke-width="1.2" stroke-linejoin="round"/><polygon points="11,8 1,18 11,40" fill="url(%23thumbLeftFacet)" opacity="0.9"/><polygon points="11,8 21,18 11,40" fill="url(%23thumbRightFacet)" opacity="0.9"/><polygon points="11,8 16,18 11,24 6,18" fill="url(%23thumbSpark)" opacity="0.85"/></svg>') no-repeat center center / contain;
   border: none;
-  box-shadow: none;
+  box-shadow: 0 4px 10px rgba(8, 15, 30, 0.35);
   transform: translateX(-50%);
   z-index: 102;
   pointer-events: none;
   transition: left 0.12s cubic-bezier(0.8, 0, 0.2, 1);
-}
-
-.slider-thumb-custom::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 6px;
-  width: 4px;
-  height: 18px;
-  background: linear-gradient(180deg, #fff9 40%, #fff2 70%, transparent 100%);
-  border-radius: 1.5px;
-  transform: rotate(-45deg);
-  pointer-events: none;
-  z-index: 1;
 }
 
 .slider-tick {
