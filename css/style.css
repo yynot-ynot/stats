@@ -1,9 +1,20 @@
 /* General Layout */
+:root {
+  --sidebar-label-reserved-width: 140px;
+}
+
 body {
   font-family: sans-serif;
   padding: 1rem 2rem;
+  padding-right: calc(2rem + var(--sidebar-label-reserved-width));
   background: #181A1B !important;
   color: #fff;
+}
+
+@media (max-width: 720px) {
+  body {
+    padding-right: 1.5rem;
+  }
 }
 
 .view-hidden {
@@ -277,7 +288,7 @@ th {
   background: #232527;
   border-left: 1px solid #333;
   box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
-  padding: 1.2rem 1rem 1rem 1rem;
+  padding: 1.2rem 1rem 1.5rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -285,6 +296,14 @@ th {
   transition: transform 0.3s ease;
   z-index: 100;
   overflow-y: auto;
+}
+
+#job-sidebar::after {
+  content: "";
+  display: block;
+  flex: 0 0 40px;
+  width: 100%;
+  pointer-events: none;
 }
 
 /* Section header for each group */
