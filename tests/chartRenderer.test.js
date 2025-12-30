@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applyFilters,
   buildParseTrendSeries,
+  __buildWeekTickConfigForTests,
 } from "../js/ui/chartRenderer.js";
 
 /**
@@ -150,4 +151,141 @@ test("buildParseTrendSeries derives per-job deltas relative to the last report",
   assert.deepEqual(dkSeries.previousTotals, [null, 120, 120, 60]);
   assert.deepEqual(monkSeries.deltas, [null, null, null, 40]);
   assert.deepEqual(monkSeries.previousTotals, [null, null, null, 40]);
+});
+
+/**
+ * Verifies the legacy behavior remains intact when no week start anchor is provided:
+ * the helper should emit labels every seven plotted data points starting from the first date.
+ */
+test("__buildWeekTickConfigForTests falls back to index-based weeks when no anchor exists", () => {
+  const labels = ["4/1", "4/2", "4/3", "4/4", "4/5", "4/6", "4/7", "4/8"];
+  const compact = [
+    "20250401",
+    "20250402",
+    "20250403",
+    "20250404",
+    "20250405",
+    "20250406",
+    "20250407",
+    "20250408",
+  ];
+  const result = __buildWeekTickConfigForTests(labels, compact, null);
+  assert.deepEqual(result.ticktext, ["4/1 (wk1)", "4/8 (wk2)"]);
+});
+
+/**
+ * Confirms that when the configured week-one date predates the dataset the helper still honors it,
+ * rolling the week numbers forward so the visible labels reflect the canonical week count rather than the index.
+ */
+test("__buildWeekTickConfigForTests honors the configured anchor even when it predates the dataset", () => {
+  const labels = [
+    "4/1",
+    "4/2",
+    "4/3",
+    "4/4",
+    "4/5",
+    "4/6",
+    "4/7",
+    "4/8",
+    "4/9",
+    "4/10",
+    "4/11",
+    "4/12",
+    "4/13",
+    "4/14",
+  ];
+  const compact = [
+    "20250401",
+    "20250402",
+    "20250403",
+    "20250404",
+    "20250405",
+    "20250406",
+    "20250407",
+    "20250408",
+    "20250409",
+    "20250410",
+    "20250411",
+    "20250412",
+    "20250413",
+    "20250414",
+  ];
+  const anchor = {
+    iso: "2025-03-18",
+    compact: "20250318",
+    dayIndex: Date.UTC(2025, 2, 18) / (24 * 60 * 60 * 1000),
+  };
+  const result = __buildWeekTickConfigForTests(labels, compact, anchor);
+  assert.deepEqual(result.ticktext, ["4/1 (wk3)", "4/8 (wk4)"]);
+});
+
+/**
+ * Ensures that when the anchor lands between two missing days (i.e., before the dataset begins),
+ * the helper waits until the next true seven-day boundary relative to the anchor before surfacing a tick.
+ */
+test("__buildWeekTickConfigForTests delays the first label until the next 7-day boundary when the anchor predates available data", () => {
+  const labels = [
+    "4/1",
+    "4/2",
+    "4/3",
+    "4/4",
+    "4/5",
+    "4/6",
+    "4/7",
+    "4/8",
+    "4/9",
+    "4/10",
+    "4/11",
+    "4/12",
+    "4/13",
+    "4/14",
+  ];
+  const compact = [
+    "20250401",
+    "20250402",
+    "20250403",
+    "20250404",
+    "20250405",
+    "20250406",
+    "20250407",
+    "20250408",
+    "20250409",
+    "20250410",
+    "20250411",
+    "20250412",
+    "20250413",
+    "20250414",
+  ];
+  const anchor = {
+    iso: "2025-03-17",
+    compact: "20250317",
+    dayIndex: Date.UTC(2025, 2, 17) / (24 * 60 * 60 * 1000),
+  };
+  const result = __buildWeekTickConfigForTests(labels, compact, anchor);
+  assert.deepEqual(result.ticktext, ["4/7 (wk4)", "4/14 (wk5)"]);
+});
+
+/**
+ * Guards against anchors that post-date the dataset by falling back to the index-driven labels instead of
+ * emitting no ticks.
+ */
+test("__buildWeekTickConfigForTests ignores anchors that post-date the available timeline", () => {
+  const labels = ["4/1", "4/2", "4/3", "4/4", "4/5", "4/6", "4/7", "4/8"];
+  const compact = [
+    "20250401",
+    "20250402",
+    "20250403",
+    "20250404",
+    "20250405",
+    "20250406",
+    "20250407",
+    "20250408",
+  ];
+  const anchor = {
+    iso: "2026-01-01",
+    compact: "20260101",
+    dayIndex: Date.UTC(2026, 0, 1) / (24 * 60 * 60 * 1000),
+  };
+  const result = __buildWeekTickConfigForTests(labels, compact, anchor);
+  assert.deepEqual(result.ticktext, ["4/1 (wk1)", "4/8 (wk2)"]);
 });

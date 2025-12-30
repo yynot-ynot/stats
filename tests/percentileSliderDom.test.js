@@ -190,12 +190,30 @@ function createLabelRow() {
 }
 
 function createRangeInput() {
+  const row = createSliderRow();
   return {
     min: "0",
     max: "100",
     step: "1",
     value: "0",
     addEventListener() {},
+    dispatchEvent() {},
+    closest() {
+      return row;
+    },
+  };
+}
+
+function createSliderRow() {
+  return {
+    classList: {
+      add() {},
+      remove() {},
+    },
+    addEventListener() {},
+    getBoundingClientRect() {
+      return { left: 0, width: 100 };
+    },
   };
 }
 

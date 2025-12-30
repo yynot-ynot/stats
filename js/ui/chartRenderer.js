@@ -6,6 +6,7 @@ import {
   getAdjustedValueForJob,
 } from "./valueDisplayUtils.js";
 import { getLogger } from "../shared/logging/logger.js";
+import { getWeekStartAnchor } from "../shared/weekStartConfig.js";
 const logger = getLogger("chartRenderer");
 
 // Shared layout margins so annotations can compensate for asymmetric spacing.
@@ -33,6 +34,7 @@ const MONTH_NAMES = Object.freeze([
   "Nov",
   "Dec",
 ]);
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function createHoverLabelTheme() {
   return {
@@ -475,6 +477,10 @@ export function renderFilteredLineChart(
     (a, b) => parseCompactDate(a) - parseCompactDate(b)
   );
   const sortedDateLabels = getDateLabels(sortedDates);
+  const weekAnchor = getWeekStartAnchor({
+    raid: filters?.raid,
+    boss: filters?.boss,
+  });
 
   const traces = prepareTraces(grouped, isDPS);
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
@@ -487,10 +493,6 @@ export function renderFilteredLineChart(
       ? `  @ ${formatOrdinalWithSuperscript(getOrdinal(percentileValue))}`
       : "";
   const yAxisTitle = `${titleSuffix || "Output"}${percentileSuffix}`;
-
-  // Find x labels to show every 7 days, starting from first
-  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
-  const ticktext = tickvals;
   const prepDurationMs = performance.now() - prepStart;
   const containerId = container?.id || "unknown-container";
 
@@ -501,7 +503,10 @@ export function renderFilteredLineChart(
     sortedDateLabels,
     titleSuffix || "Output",
     annotations,
-    yAxisTitle
+    yAxisTitle,
+    true,
+    false,
+    { compactDates: sortedDates, weekAnchor }
   );
   logTrendChartTiming({
     chartTitle: titleSuffix || "Output",
@@ -693,6 +698,10 @@ export function renderParseTrendCharts({
   const prepDurationMs = performance.now() - prepStart;
   const totalContainerId = totalContainer?.id || "parse-total-plot";
   const deltaContainerId = deltaContainer?.id || "parse-delta-plot";
+  const weekAnchor = getWeekStartAnchor({
+    raid: filters?.raid,
+    boss: filters?.boss,
+  });
 
   const annotations = generateYearAnnotations(compactDates, dateLabels, {
     singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
@@ -702,13 +711,15 @@ export function renderParseTrendCharts({
     totalTraces,
     totalContainer,
     dateLabels,
-    "Parse Volume Trend",
+    "Parse Count over Time",
     annotations,
     "Total Parses",
-    true
+    true,
+    false,
+    { compactDates, weekAnchor }
   );
   logTrendChartTiming({
-    chartTitle: "Parse Volume Trend",
+    chartTitle: "Parse Count over Time",
     containerId: totalContainerId,
     prepDurationMs,
     plotStart: totalPlotStart,
@@ -725,13 +736,15 @@ export function renderParseTrendCharts({
     deltaTraces,
     deltaContainer,
     dateLabels,
-    "Parse Delta Trend",
+    "Change in Parse Count",
     deltaAnnotations,
-    "Delta Parses",
-    true
+    "Parse Count Change",
+    true,
+    false,
+    { compactDates, weekAnchor }
   );
   logTrendChartTiming({
-    chartTitle: "Parse Delta Trend",
+    chartTitle: "Change in Parse Count",
     containerId: deltaContainerId,
     prepDurationMs,
     plotStart: deltaPlotStart,
@@ -872,9 +885,10 @@ export function renderComparisonLineChart(
   // --- X axis setup: use all dates in dateList, labels only every 7 days ---
   const sortedDates = dateList;
   const sortedDateLabels = getDateLabels(sortedDates);
-  // Show tick labels every 7 days (starting at the first date)
-  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
-  const ticktext = tickvals;
+  const weekAnchor = getWeekStartAnchor({
+    raid: filters?.raid,
+    boss: filters?.boss,
+  });
 
   // Year annotation(s)
   const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
@@ -890,7 +904,10 @@ export function renderComparisonLineChart(
     sortedDateLabels,
     titleSuffix,
     annotations,
-    "Difference"
+    "Difference",
+    true,
+    false,
+    { compactDates: sortedDates, weekAnchor }
   );
   logTrendChartTiming({
     chartTitle: titleSuffix,
@@ -1284,15 +1301,15 @@ function plotChartWithLayout(
   annotations,
   yAxisTitle,
   fixedRange = true,
-  showLegend = false
+  showLegend = false,
+  options = {}
 ) {
-  const tickvals = sortedDateLabels.filter((_, i) => i % 7 === 0);
-  // Add (wkN) starting at 1 for each 7-day label
-  const ticktext = sortedDateLabels
-    .map((label, i) =>
-      i % 7 === 0 ? `${label} (wk${Math.floor(i / 7) + 1})` : null
-    )
-    .filter((v) => v !== null);
+  const { compactDates = null, weekAnchor = null } = options;
+  const { tickvals, ticktext } = buildWeekTickConfig(
+    sortedDateLabels,
+    compactDates,
+    weekAnchor
+  );
   const layoutMargin = { ...BASE_CHART_MARGINS };
 
   const layout = {
@@ -1397,4 +1414,102 @@ function getJobColor(jobName) {
       .toString(16)
       .padStart(6, "0");
   return randColor;
+}
+/**
+ * Derive tick labels for the chart's x-axis, inserting week numbers that either
+ * mirror the configured anchor date or fall back to index-based weeks when no override applies.
+ * The axis still surfaces labels at seven-day increments measured from the declared week-one start,
+ * which may predate the available dataset; when no override exists we fall back to the first data day.
+ * @param {Array<string>} sortedDateLabels
+ * @param {Array<string>|null} compactDates
+ * @param {{dayIndex: number}|null} weekAnchor
+ * @returns {{tickvals: Array<string>, ticktext: Array<string>}}
+ */
+function buildWeekTickConfig(sortedDateLabels = [], compactDates, weekAnchor) {
+  const tickvals = [];
+  const ticktext = [];
+  const alignedDates =
+    Array.isArray(compactDates) &&
+    compactDates.length === sortedDateLabels.length;
+  const anchorForRange = resolveApplicableAnchor(weekAnchor, compactDates);
+  if (anchorForRange && alignedDates) {
+    const startDayIndex = anchorForRange.dayIndex;
+    sortedDateLabels.forEach((label, index) => {
+      const dateStr = compactDates[index];
+      const dayIndex = getDayIndexFromCompact(dateStr);
+      if (dayIndex === null || dayIndex < startDayIndex) return;
+      if ((dayIndex - startDayIndex) % 7 !== 0) return;
+      tickvals.push(label);
+      const suffix = formatAnchorWeekSuffix(dayIndex, startDayIndex);
+      ticktext.push(`${label} ${suffix}`);
+    });
+    if (tickvals.length > 0) {
+      return { tickvals, ticktext };
+    }
+  }
+  // Fallback: no anchor or accent misalignment; revert to every 7th plotted day.
+  sortedDateLabels.forEach((label, index) => {
+    if (index % 7 !== 0) return;
+    tickvals.push(label);
+    ticktext.push(`${label} ${formatFallbackWeekSuffix(index)}`);
+  });
+  return { tickvals, ticktext };
+}
+
+function resolveApplicableAnchor(weekAnchor, compactDates) {
+  if (
+    !weekAnchor ||
+    typeof weekAnchor.dayIndex !== "number" ||
+    !Array.isArray(compactDates) ||
+    compactDates.length === 0
+  ) {
+    return null;
+  }
+  const lastDayIndex = getDayIndexFromCompact(
+    compactDates[compactDates.length - 1]
+  );
+  if (lastDayIndex === null) return null;
+  if (weekAnchor.dayIndex > lastDayIndex) return null;
+  return weekAnchor;
+}
+
+function formatAnchorWeekSuffix(dayIndex, startDayIndex) {
+  const deltaDays = dayIndex - startDayIndex;
+  const anchorWeek = Math.floor(deltaDays / 7) + 1;
+  return `(wk${anchorWeek})`;
+}
+
+function formatFallbackWeekSuffix(index) {
+  const fallbackWeek = Math.floor(index / 7) + 1;
+  return `(wk${fallbackWeek})`;
+}
+
+function getDayIndexFromCompact(compact) {
+  if (!compact || typeof compact !== "string" || compact.length !== 8) {
+    return null;
+  }
+  const year = Number(compact.slice(0, 4));
+  const month = Number(compact.slice(4, 6));
+  const day = Number(compact.slice(6, 8));
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(month) ||
+    Number.isNaN(day)
+  ) {
+    return null;
+  }
+  const utcTime = Date.UTC(year, month - 1, day);
+  return Number.isNaN(utcTime) ? null : utcTime / MS_PER_DAY;
+}
+
+/**
+ * Test-only utility that exposes the internal tick-label builder so unit tests can
+ * assert week-number formatting without invoking Plotly.
+ * @param {Array<string>} labels
+ * @param {Array<string>} compactDates
+ * @param {{dayIndex: number}|null} weekAnchor
+ * @returns {{tickvals: Array<string>, ticktext: Array<string>}}
+ */
+export function __buildWeekTickConfigForTests(labels, compactDates, weekAnchor) {
+  return buildWeekTickConfig(labels, compactDates, weekAnchor);
 }
