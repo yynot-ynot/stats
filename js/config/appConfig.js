@@ -56,6 +56,11 @@ export const MULTI_SELECTS = ["job-select", "percentile-compare-select"];
 // Custom order overrides (e.g., bosses)
 export const ORDER_OVERRIDES = {
   "boss-select": [
+    "Vamp Fatale",
+    "Red Hot and Deep Blue",
+    "The Tyrant",
+    "The Lindwurm",
+    "Unkown",
     "Dancing Green",
     "Sugar Riot",
     "Brute Abombinator",
