@@ -1,7 +1,4 @@
-import {
-  setModuleLogLevel,
-  envLogLevel,
-} from "../shared/logging/logger.js";
+import { setModuleLogLevel, envLogLevel } from "../shared/logging/logger.js";
 
 // Configure logging levels for individual modules (debug locally, quieter in prod)
 const uiModuleLogLevel = envLogLevel("debug", "warn");
@@ -60,7 +57,7 @@ export const ORDER_OVERRIDES = {
     "Red Hot and Deep Blue",
     "The Tyrant",
     "The Lindwurm",
-    "Unkown",
+    "The Lindwurm II",
     "Dancing Green",
     "Sugar Riot",
     "Brute Abombinator",
