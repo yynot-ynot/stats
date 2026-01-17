@@ -92,7 +92,16 @@
   <div id="percentile-view-container" data-view="percentile" class="view-hidden">
     <div id="percentile-view-placeholder" class="chart-empty-message"></div>
     <div id="percentile-view-content" class="percentile-view-content view-hidden">
-      <div id="percentile-date-slider-container" class="percentile-date-slider" data-view="percentile"></div>
+      <div class="percentile-max-toggle-row" data-view="percentile">
+        <button
+          type="button"
+          class="percentile-max-toggle-btn"
+          data-role="percentile-max-toggle-standalone"
+          aria-pressed="false"
+        >
+          Show/Hide 100th Percentile
+        </button>
+      </div>
       <div class="percentile-chart-section">
         <h3>DPS Percentile</h3>
         <div id="percentile-dps-chart" class="percentile-chart"></div>
@@ -101,6 +110,11 @@
         <h3>Healing Percentile</h3>
         <div id="percentile-hps-chart" class="percentile-chart"></div>
       </div>
+      <section
+        id="percentile-gap-matrix-section"
+        class="percentile-gap-matrix-section view-hidden"
+        data-view="percentile"
+      ></section>
     </div>
   </div>
 
@@ -108,6 +122,13 @@
        Sidebar Header Bar (Right-top)
        ================================ -->
   <div id="sidebar-header-bar">
+    <div
+      id="percentile-date-slider-container"
+      class="percentile-date-slider sidebar-date-slider"
+      data-view="percentile"
+      data-role="percentile-date-slider"
+      data-hide-max-toggle="true"
+    ></div>
     <!-- ==== DPS Metric Selector ==== -->
     <div id="dps-type-label-container" tabindex="0" role="button" aria-label="Show/hide DPS metric sidebar">
       <div id="dps-metric-label">DPS Metric</div>

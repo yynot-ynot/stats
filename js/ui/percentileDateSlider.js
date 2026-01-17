@@ -6,92 +6,77 @@ import {
 import { getLogger } from "../shared/logging/logger.js";
 
 const logger = getLogger("percentileDateSlider");
+const SLIDER_CONTAINER_SELECTOR = "[data-role='percentile-date-slider']";
+const EXTERNAL_MAX_TOGGLE_SELECTOR =
+  "[data-role='percentile-max-toggle-standalone']";
 
 /**
  * Tracks the distinct sorted date list currently driving the slider.
  * We cache the slider DOM + mapping so we don't rebuild the control unnecessarily.
  */
 let availableDates = [];
-let sliderEl = null;
-let labelEl = null;
-let maxToggleButtonEl = null;
 let hasSubscribed = false;
 let isInternalUpdate = false;
 let dateToPosition = new Map();
 let lastDatesKey = "";
+let lastContainerSignature = "";
+const sliderInstances = new Map();
+const externalMaxToggleButtons = new Set();
 
 /**
- * Initialize the percentile date slider with the provided date list.
- * Dates should be compact YYYYMMDD strings sorted ascending.
- * @param {string[]} dates
- */
-/**
- * Initialize (or refresh) the percentile date slider.
- * The control defaults to the newest date, but when filters change we keep the existing
- * slider instance and simply realign it if the available date list hasn't changed.
+ * Initialize (or refresh) every percentile date slider instance.
+ * All rendered sliders stay in sync because they publish to the shared filter state.
  * @param {string[]} dates - Sorted list of compact YYYYMMDD strings.
  */
 export function setupPercentileDateSlider(dates) {
-  const container = document.getElementById("percentile-date-slider-container");
-  if (!container) return;
+  const containers = getSliderContainers();
+  setupExternalMaxToggles();
+  if (containers.length === 0) {
+    sliderInstances.clear();
+    lastContainerSignature = "";
+    return;
+  }
+
   availableDates = Array.isArray(dates) ? [...new Set(dates)] : [];
   availableDates.sort();
   const newKey = availableDates.join(",");
-  if (newKey === lastDatesKey && sliderEl) {
-    const state = getCurrentFilterState();
-    const resolved = resolveDate(state.selectedPercentileDate);
-    setSliderToDate(resolved, { updateFilter: false });
-    return;
-  }
-  lastDatesKey = newKey;
+  const containerSignature = getContainerSignature(containers);
+
   if (availableDates.length === 0) {
-    container.innerHTML = "";
+    containers.forEach((container) => {
+      if (container) container.innerHTML = "";
+      sliderInstances.delete(container);
+    });
+    lastDatesKey = "";
+    lastContainerSignature = containerSignature;
     return;
   }
 
-  container.innerHTML = `
-    <button
-      id="percentile-max-toggle"
-      type="button"
-      class="percentile-max-toggle-btn"
-      aria-pressed="false"
-    >Show/Hide 100th Percentile</button>
-    <label for="percentile-date-slider">Select Date</label>
-    <input id="percentile-date-slider" type="range" min="0" max="100" step="0.1" />
-    <div class="percentile-date-display"></div>
-  `;
-  sliderEl = container.querySelector("#percentile-date-slider");
-  labelEl = container.querySelector(".percentile-date-display");
-  maxToggleButtonEl = container.querySelector("#percentile-max-toggle");
   dateToPosition = buildPositions(availableDates);
+
+  const needsRebuild =
+    newKey !== lastDatesKey ||
+    containerSignature !== lastContainerSignature ||
+    sliderInstances.size !== containers.length ||
+    containers.some((container) => !sliderInstances.has(container));
+
+  if (needsRebuild) {
+    sliderInstances.clear();
+    containers.forEach((container, index) => {
+      if (!container) return;
+      sliderInstances.set(container, buildSliderInstance(container, index));
+    });
+  }
+
+  lastDatesKey = newKey;
+  lastContainerSignature = containerSignature;
 
   const state = getCurrentFilterState();
   const initialDate = resolveDate(state.selectedPercentileDate);
-  setSliderToDate(initialDate, {
+  setSlidersToDate(initialDate, {
     updateFilter: state.selectedPercentileDate !== initialDate,
   });
-  updateMaxToggleUi(shouldShowMaxPercentile(state));
-
-  /**
-   * Continuously emit filter updates as the user drags the slider so charts refresh in real time.
-   */
-  const updateFromSlider = () => {
-    const date = getNearestDate(Number(sliderEl.value));
-    updateDisplay(date);
-    isInternalUpdate = true;
-    updateFilterValue("selectedPercentileDate", date);
-    isInternalUpdate = false;
-  };
-
-  sliderEl.addEventListener("input", updateFromSlider);
-  sliderEl.addEventListener("change", updateFromSlider);
-  if (maxToggleButtonEl) {
-    maxToggleButtonEl.addEventListener("click", () => {
-      const currentState = getCurrentFilterState();
-      const nextValue = !shouldShowMaxPercentile(currentState);
-      updateFilterValue("showMaxPercentile", nextValue);
-    });
-  }
+  updateMaxToggleUiForAll(shouldShowMaxPercentile(state));
 
   if (!hasSubscribed) {
     subscribeToFilterChanges((state, change) => {
@@ -100,13 +85,135 @@ export function setupPercentileDateSlider(dates) {
       const isDateChange = !change || change.key === "selectedPercentileDate";
       const shouldUpdateFilter =
         !isDateChange && state.selectedPercentileDate !== resolved;
-      setSliderToDate(resolved, { updateFilter: shouldUpdateFilter });
+      setSlidersToDate(resolved, { updateFilter: shouldUpdateFilter });
       if (!change || change.key === "showMaxPercentile") {
-        updateMaxToggleUi(shouldShowMaxPercentile(state));
+        updateMaxToggleUiForAll(shouldShowMaxPercentile(state));
       }
     });
     hasSubscribed = true;
   }
+}
+
+function getSliderContainers() {
+  if (typeof document === "undefined" || !document.querySelectorAll) {
+    return [];
+  }
+  return Array.from(document.querySelectorAll(SLIDER_CONTAINER_SELECTOR));
+}
+
+function setupExternalMaxToggles() {
+  if (typeof document === "undefined" || !document.querySelectorAll) return;
+  const buttons = document.querySelectorAll(EXTERNAL_MAX_TOGGLE_SELECTOR);
+  buttons.forEach((button) => {
+    if (!button || externalMaxToggleButtons.has(button)) return;
+    button.addEventListener("click", () => {
+      const currentState = getCurrentFilterState();
+      const nextValue = !shouldShowMaxPercentile(currentState);
+      updateFilterValue("showMaxPercentile", nextValue);
+    });
+    externalMaxToggleButtons.add(button);
+  });
+}
+
+function getContainerSignature(containers) {
+  return containers
+    .map((container, index) => {
+      if (!container) return `missing-${index}`;
+      if (container.dataset && container.dataset.sliderKey) {
+        return container.dataset.sliderKey;
+      }
+      if (container.id) return container.id;
+      return `idx-${index}`;
+    })
+    .join("|");
+}
+
+/**
+ * Build the DOM markup for a single percentile date slider instance. Containers may opt-out
+ * of rendering the 0th/100th-percentile toggle (e.g., the matrix-specific slider) by setting
+ * data-hide-max-toggle="true".
+ * @param {HTMLElement} container - Target element for the slider UI.
+ * @param {number} index - Fallback index used to derive unique IDs when no id attribute exists.
+ * @returns {{sliderEl: HTMLElement|null, labelEl: HTMLElement|null, maxToggleButtonEl: HTMLElement|null}}
+ */
+function buildSliderInstance(container, index) {
+  const baseId = container.id || `percentile-date-slider-${index}`;
+  const sliderId = `${baseId}-input`;
+  const displayId = `${baseId}-display`;
+  const shouldHideToggle =
+    container?.dataset?.hideMaxToggle === "true" ||
+    container?.dataset?.hideMaxToggle === "1";
+  if (container.dataset) {
+    container.dataset.sliderKey = container.dataset.sliderKey || baseId;
+  }
+
+  container.innerHTML = `
+    ${
+      shouldHideToggle
+        ? ""
+        : `<button
+      type="button"
+      class="percentile-max-toggle-btn"
+      data-role="percentile-max-toggle"
+      aria-pressed="false"
+    >Show/Hide 100th Percentile</button>`
+    }
+    <label for="${sliderId}">Select Date</label>
+    <input
+      id="${sliderId}"
+      type="range"
+      min="0"
+      max="100"
+      step="0.1"
+      data-role="percentile-date-input"
+    />
+    <div
+      id="${displayId}"
+      class="percentile-date-display"
+      data-role="percentile-date-display"
+    ></div>
+  `;
+
+  const sliderEl = container.querySelector(
+    "[data-role='percentile-date-input']"
+  );
+  const labelEl = container.querySelector(
+    "[data-role='percentile-date-display']"
+  );
+  const maxToggleButtonEl = shouldHideToggle
+    ? null
+    : container.querySelector("[data-role='percentile-max-toggle']");
+
+  const instance = { sliderEl, labelEl, maxToggleButtonEl };
+
+  if (sliderEl) {
+    const updateFromSlider = () => {
+      handleSliderInput(instance);
+    };
+    sliderEl.addEventListener("input", updateFromSlider);
+    sliderEl.addEventListener("change", updateFromSlider);
+  } else {
+    logger.warn("Percentile date slider input not found for container", baseId);
+  }
+
+  if (maxToggleButtonEl) {
+    maxToggleButtonEl.addEventListener("click", () => {
+      const currentState = getCurrentFilterState();
+      const nextValue = !shouldShowMaxPercentile(currentState);
+      updateFilterValue("showMaxPercentile", nextValue);
+    });
+  }
+
+  return instance;
+}
+
+function handleSliderInput(instance) {
+  if (!instance || !instance.sliderEl) return;
+  const date = getNearestDate(Number(instance.sliderEl.value));
+  setSlidersToDate(date, { updateFilter: false });
+  isInternalUpdate = true;
+  updateFilterValue("selectedPercentileDate", date);
+  isInternalUpdate = false;
 }
 
 function resolveDate(preferred) {
@@ -116,17 +223,19 @@ function resolveDate(preferred) {
 }
 
 /**
- * Update the slider thumb to point at the provided date and optionally push
- * the new value back into the centralized filter state.
+ * Update every slider thumb to point at the provided date and optionally
+ * synchronize the shared filter state.
  * @param {string} date
  * @param {{updateFilter: boolean}} options
  */
-function setSliderToDate(date, { updateFilter }) {
-  if (!date || !sliderEl) return;
+function setSlidersToDate(date, { updateFilter }) {
+  if (!date || !dateToPosition.has(date)) return;
   const position = dateToPosition.get(date);
-  if (position === undefined) return;
-  sliderEl.value = String(position);
-  updateDisplay(date);
+  sliderInstances.forEach((instance) => {
+    if (!instance || !instance.sliderEl) return;
+    instance.sliderEl.value = String(position);
+    updateInstanceDisplay(instance, date);
+  });
   if (updateFilter) {
     isInternalUpdate = true;
     updateFilterValue("selectedPercentileDate", date);
@@ -135,23 +244,29 @@ function setSliderToDate(date, { updateFilter }) {
 }
 
 /**
- * Refresh the visible label under the slider to show the month/day for the provided date.
+ * Refresh the visible label under a slider to show the month/day for the provided date.
+ * @param {{labelEl: HTMLElement}} instance
  * @param {string} date
  */
-function updateDisplay(date) {
-  if (!labelEl) return;
-  labelEl.textContent = formatDateLabel(date);
+function updateInstanceDisplay(instance, date) {
+  if (!instance || !instance.labelEl) return;
+  instance.labelEl.textContent = formatDateLabel(date);
 }
 
 /**
- * Sync the 100th-percentile toggle button with the active filter state by
- * updating the aria-pressed attribute; the label remains static per UX request
- * while styling conveys the enabled/disabled state.
- * @param {boolean} isVisible - Whether the 100th percentile is currently included.
+ * Sync every 100th-percentile toggle button with the active filter state
+ * by updating the aria-pressed attribute while keeping the label text static.
+ * @param {boolean} isVisible
  */
-function updateMaxToggleUi(isVisible) {
-  if (!maxToggleButtonEl) return;
-  maxToggleButtonEl.setAttribute("aria-pressed", String(isVisible));
+function updateMaxToggleUiForAll(isVisible) {
+  sliderInstances.forEach((instance) => {
+    if (!instance || !instance.maxToggleButtonEl) return;
+    instance.maxToggleButtonEl.setAttribute("aria-pressed", String(isVisible));
+  });
+  externalMaxToggleButtons.forEach((button) => {
+    if (!button) return;
+    button.setAttribute("aria-pressed", String(isVisible));
+  });
 }
 
 function formatDateLabel(compact) {

@@ -319,6 +319,9 @@ function updatePercentileCharts(state) {
   const viewContent = document.getElementById("percentile-view-content");
   const dpsContainer = document.getElementById("percentile-dps-chart");
   const hpsContainer = document.getElementById("percentile-hps-chart");
+  const matrixSection = document.getElementById(
+    "percentile-gap-matrix-section"
+  );
   if (!dpsContainer || !hpsContainer) return;
 
   const showContent = () => {
@@ -359,22 +362,45 @@ function updatePercentileCharts(state) {
   const hpsData = globalData.filter((row) => "hps" in row);
   const dpsMetricLabel = formatDpsMetricTitle(state.selectedDpsType);
 
-  import("../ui/chartRenderer.js").then(({ renderPercentileCharts }) => {
-    const result = renderPercentileCharts({
-      dpsData,
-      hpsData,
-      dpsFilters,
-      hpsFilters,
-      dpsContainer,
-      hpsContainer,
-      dpsLabel: dpsMetricLabel,
-      targetDate: state.selectedPercentileDate,
-      includeMaxPercentile,
-    });
-    if (!result.renderedAny) {
-      showMessage("No percentile data available for the current selection.");
+  Promise.all([
+    import("../ui/chartRenderer.js"),
+    import("../logic/percentileGapMatrix.js"),
+    import("../ui/percentileGapMatrixView.js"),
+  ]).then(
+    ([
+      { renderPercentileCharts },
+      { buildPercentileGapMatrixData },
+      { renderPercentileGapMatrixView },
+    ]) => {
+      const result = renderPercentileCharts({
+        dpsData,
+        hpsData,
+        dpsFilters,
+        hpsFilters,
+        dpsContainer,
+        hpsContainer,
+        dpsLabel: dpsMetricLabel,
+        targetDate: state.selectedPercentileDate,
+        includeMaxPercentile,
+      });
+      if (!result.renderedAny) {
+        showMessage("No percentile data available for the current selection.");
+      }
+      const matrixData = buildPercentileGapMatrixData({
+        data: dpsData,
+        filters: dpsFilters,
+        valueKey: "dps",
+        targetDates: state.selectedPercentileDate
+          ? [state.selectedPercentileDate]
+          : [],
+      });
+      renderPercentileGapMatrixView({
+        container: matrixSection,
+        matrixData,
+        valueLabel: dpsMetricLabel,
+      });
     }
-  });
+  );
 }
 
 /**
