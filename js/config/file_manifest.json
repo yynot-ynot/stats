@@ -164,8 +164,8 @@
   "20260106_trials-iii-extreme_dps.json.gz",
   "20260106_trials-iii-extreme_healing.json.gz",
   "20260107_aac-heavyweight_dps.json.gz",
-  "20260107_trials-iii-extreme_doomtrain_dps.json.gz",
   "20260107_aac-heavyweight_healing.json.gz",
+  "20260107_trials-iii-extreme_doomtrain_dps.json.gz",
   "20260107_trials-iii-extreme_doomtrain_healing.json.gz",
   "20260108_aac-heavyweight_red-hot-and-deep-blue_the-lindwurm_vamp-fatale_unkown_the-tyrant_dps.json.gz",
   "20260108_aac-heavyweight_red-hot-and-deep-blue_the-lindwurm_vamp-fatale_unkown_the-tyrant_healing.json.gz",
@@ -226,5 +226,7 @@
   "20260122_aac-heavyweight_the-tyrant_vamp-fatale_the-lindwurm_the-lindwurm-ii_red-hot-and-deep-blue_dps.json.gz",
   "20260122_aac-heavyweight_the-tyrant_vamp-fatale_the-lindwurm_the-lindwurm-ii_red-hot-and-deep-blue_healing.json.gz",
   "20260122_trials-iii-extreme_doomtrain_dps.json.gz",
-  "20260122_trials-iii-extreme_doomtrain_healing.json.gz"
+  "20260122_trials-iii-extreme_doomtrain_healing.json.gz",
+  "20260123_aac-heavyweight_the-lindwurm-ii_red-hot-and-deep-blue_the-tyrant_the-lindwurm_vamp-fatale_dps.json.gz",
+  "20260123_aac-heavyweight_the-lindwurm-ii_red-hot-and-deep-blue_the-tyrant_the-lindwurm_vamp-fatale_healing.json.gz"
 ]
