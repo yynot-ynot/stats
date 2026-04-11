@@ -6,9 +6,15 @@ import {
   fetchAndDecompressJsonGz,
 } from "../core/dataLoader.js";
 import {
+  buildManifestRaidIndex,
+  resolveEffectiveRaid,
+} from "../core/manifestRaidIndex.js";
+import { createRaidLoadScheduler } from "../core/raidLoadScheduler.js";
+import {
   filterState,
   updateFilterValue,
   getCurrentFilterState,
+  subscribeToFilterChanges,
 } from "../shared/filterState.js";
 import {
   parseFilterStateFromUrl,
@@ -32,9 +38,18 @@ import {
 import { setupViewSwitcher } from "../ui/viewSwitcher.js";
 
 import { setupDataDisplayManager } from "./dataDisplayManager.js";
+import { createRaidDataStore } from "./raidDataStore.js";
 
-let allData = [];
 let isLoading = false;
+let manifestIndex = null;
+let raidDataStore = null;
+let raidLoadScheduler = null;
+let activeRaid = "";
+let chromeInitialized = false;
+let filterUrlSyncStarted = false;
+let raidChangeListenerInitialized = false;
+let suppressRaidChangeHandling = false;
+const finalFailedFiles = new Map();
 
 /**
  * Get the current loading state.
@@ -61,63 +76,46 @@ export async function init() {
     // Step 1: Discover available JSON files
     const t1 = performance.now();
     const files = await fetchAvailableJsonFiles("json/");
+    manifestIndex = buildManifestRaidIndex(files);
+    raidDataStore = createRaidDataStore(manifestIndex.filesByRaid);
+    raidLoadScheduler = createRaidLoadScheduler({
+      allFiles: manifestIndex.allFiles,
+      filesByRaid: manifestIndex.filesByRaid,
+      loadFile: async (record) => fetchAndDecompressJsonGz(record.path),
+      onFileLoaded: (record, rows) => {
+        raidDataStore.appendFileRows(record.raid, record.path, rows);
+        finalFailedFiles.delete(record.path);
+        syncLoadFailureMessage();
+      },
+      onFileFailed: (record, error) => {
+        raidDataStore.markFileFailed(record.raid, record.path, error);
+        finalFailedFiles.set(record.path, error);
+        logger.warn(`Error loading ${record.path}:`, error);
+        syncLoadFailureMessage();
+      },
+    });
     const t2 = performance.now();
     logger.debug(
       `Discovered ${files.length} files to load. (in ${(t2 - t1).toFixed(1)}ms)`
     );
 
-    // Step 2: Fetch and decompress all files in parallel
-    const tDecompressStart = performance.now();
-    const allFilePromises = files.map(async (file) => {
-      try {
-        const data = await fetchAndDecompressJsonGz(file);
-        return data;
-      } catch (err) {
-        logger.warn(`Error loading ${file}:`, err);
-        return [];
-      }
+    ensureRaidChangeListener();
+    const effectiveRaid = resolveEffectiveRaid(
+      manifestIndex,
+      initialFiltersFromUrl.selectedRaid
+    );
+    await activateRaid(effectiveRaid, {
+      applyUrlFilters: true,
+      urlFilters: initialFiltersFromUrl,
     });
 
-    const loadedArrays = await Promise.all(allFilePromises);
-    allData = loadedArrays.flat(); // Flatten into a single array
-    const tDecompressEnd = performance.now();
-    logger.debug(
-      `Total decompression time (parallel): ${(
-        tDecompressEnd - tDecompressStart
-      ).toFixed(1)}ms`
-    );
-
-    // Step 3: Populate filter dropdowns and sidebar
-    const tFiltersStart = performance.now();
-    populateAllFilters(allData);
-    setupHeaderBindings();
-    setupViewSwitcher();
-
-    const dpsTypes = Array.from(
-      new Set(allData.filter((d) => d.dps_type).map((d) => d.dps_type))
-    );
-    setupDpsTypeSidebarManager(dpsTypes);
-
-    const uniqueJobs = Array.from(new Set(allData.map((d) => d.class)));
-    setupJobSidebar(uniqueJobs); // uses idle batching to avoid blocking
-    applyInitialFiltersFromUrl(initialFiltersFromUrl);
-    // Force initial notification so filter listeners fire on startup
-    updateFilterValue("selectedJobs", filterState.selectedJobs); // This will notify listeners
-
-    const tFiltersEnd = performance.now();
-    logger.debug(
-      `Populated filters in ${(tFiltersEnd - tFiltersStart).toFixed(1)}ms`
-    );
-
-    // Step 4: Setup centralized filter event listeners and display manager
-    setupDataDisplayManager(allData);
-    startFilterUrlSync();
+    if (!filterUrlSyncStarted) {
+      startFilterUrlSync();
+      filterUrlSyncStarted = true;
+    }
     broadcastCurrentFilters();
     logDisplayedRaidBossState();
-    const tListeners = performance.now();
-    logger.debug(
-      `Setup filter listeners in ${(tListeners - tFiltersEnd).toFixed(1)}ms`
-    );
+    raidLoadScheduler.startBackgroundLoading();
   } catch (e) {
     logger.error("Discovery failed:", e);
   } finally {
@@ -126,6 +124,65 @@ export async function init() {
 
   const end = performance.now();
   logger.debug(`Total init() duration: ${(end - start).toFixed(1)}ms`);
+}
+
+/**
+ * Load the active raid, derive its row-driven UI state, and activate that raid
+ * as the current app context without restoring prior user-made selections.
+ *
+ * @param {string} raid
+ * @param {Object} options
+ * @param {boolean} [options.applyUrlFilters=false]
+ * @param {Object} [options.urlFilters]
+ */
+async function activateRaid(raid, options = {}) {
+  if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
+
+  const { applyUrlFilters = false, urlFilters = null } = options;
+  activeRaid = raid;
+  isLoading = true;
+  suppressRaidChangeHandling = true;
+  raidLoadScheduler.setActiveRaid(raid);
+  raidDataStore.markRaidLoading(raid);
+
+  const tRaidLoadStart = performance.now();
+  await raidLoadScheduler.prioritizeRaid(raid);
+  const activeRaidRows = raidDataStore.getRaidRows(raid);
+  const tRaidLoadEnd = performance.now();
+  logger.debug(
+    `Activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
+  );
+
+  setupDataDisplayManager(activeRaidRows);
+  populateAllFilters(activeRaidRows, {
+    raidValues: manifestIndex.sortedRaids,
+    raidLatestDates: manifestIndex.latestDateByRaid,
+    preferredRaid: raid,
+  });
+
+  if (!chromeInitialized) {
+    setupHeaderBindings();
+    setupViewSwitcher();
+    chromeInitialized = true;
+  }
+
+  const dpsTypes = Array.from(
+    new Set(activeRaidRows.filter((d) => d.dps_type).map((d) => d.dps_type))
+  );
+  setupDpsTypeSidebarManager(dpsTypes);
+
+  const uniqueJobs = Array.from(new Set(activeRaidRows.map((d) => d.class)));
+  setupJobSidebar(uniqueJobs);
+
+  if (applyUrlFilters) {
+    applyInitialFiltersFromUrl(urlFilters);
+  } else {
+    resetSelectionsForRaidActivation();
+  }
+
+  syncLoadFailureMessage();
+  suppressRaidChangeHandling = false;
+  isLoading = false;
 }
 
 /**
@@ -162,6 +219,14 @@ function applyInitialFiltersFromUrl(filters) {
   if (filters.selectedJobs instanceof Set && filters.selectedJobs.size > 0) {
     applyJobSelections(filters.selectedJobs);
   }
+}
+
+/**
+ * Reset the cross-filter selections that should not persist across raid
+ * switches. Dropdown-based defaults are handled by the active-raid setup code.
+ */
+function resetSelectionsForRaidActivation() {
+  updateFilterValue("selectedJobs", new Set());
 }
 
 /**
@@ -218,4 +283,60 @@ function logDisplayedRaidBossState() {
       selectedRaid || ""
     }") | Displayed boss: "${displayedBoss}" (filter: "${selectedBoss || ""}")`
   );
+}
+
+function ensureRaidChangeListener() {
+  if (raidChangeListenerInitialized) return;
+  raidChangeListenerInitialized = true;
+  subscribeToFilterChanges((state, change) => {
+    if (!change || change.key !== "selectedRaid") return;
+    const nextRaid = state.selectedRaid || "";
+    if (!nextRaid || nextRaid === activeRaid || suppressRaidChangeHandling) {
+      return;
+    }
+
+    updateFilterValue("selectedJobs", new Set());
+    activateRaid(nextRaid)
+      .then(() => {
+        if (filterUrlSyncStarted) {
+          broadcastCurrentFilters();
+        }
+      })
+      .catch((error) => {
+        logger.error(`Failed to activate raid "${nextRaid}"`, error);
+      });
+  });
+}
+
+function syncLoadFailureMessage() {
+  const messageEl = getOrCreateLoadMessageElement();
+  if (!messageEl) return;
+
+  if (finalFailedFiles.size === 0) {
+    messageEl.style.display = "none";
+    messageEl.textContent = "";
+    return;
+  }
+
+  const failedNames = Array.from(finalFailedFiles.keys())
+    .map((filePath) => filePath.split("/").pop())
+    .sort();
+  messageEl.style.display = "";
+  messageEl.textContent = `Some data files failed to load and are being treated as missing data: ${failedNames.join(", ")}`;
+}
+
+function getOrCreateLoadMessageElement() {
+  if (typeof document === "undefined") return null;
+  let el = document.getElementById("load-status-message");
+  if (el) return el;
+
+  const filters = document.getElementById("filters");
+  if (!filters) return null;
+
+  el = document.createElement("div");
+  el.id = "load-status-message";
+  el.className = "chart-empty-message";
+  el.style.display = "none";
+  filters.insertAdjacentElement("afterend", el);
+  return el;
 }

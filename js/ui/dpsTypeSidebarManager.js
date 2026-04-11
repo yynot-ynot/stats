@@ -5,6 +5,8 @@ import {
 import { DEFAULTS } from "../config/appConfig.js";
 import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("dpsTypeSidebarManager");
+let currentDpsTypeOptions = [];
+let dpsTypeSubscriptionInitialized = false;
 
 /**
  * Sets up the sidebar DPS Metric selector as a persistent, top-right fixed UI element.
@@ -27,22 +29,22 @@ export function setupDpsTypeSidebarManager(dpsTypeOptions) {
     return;
   }
 
-  // Debug log: List all available DPS Types
-  logger.debug(`Available DPS Types: ${dpsTypeOptions.join(", ")}`);
+  currentDpsTypeOptions = [...dpsTypeOptions];
+  logger.debug(`Available DPS Types: ${currentDpsTypeOptions.join(", ")}`);
 
   const configuredDefault = DEFAULTS["dps-type-select"];
   const hasConfiguredDefault =
     typeof configuredDefault === "string" &&
-    dpsTypeOptions.includes(configuredDefault);
+    currentDpsTypeOptions.includes(configuredDefault);
   const defaultType = hasConfiguredDefault
     ? configuredDefault
-    : dpsTypeOptions[0];
+    : currentDpsTypeOptions[0];
 
   // Clear out any old options in <select>
   select.innerHTML = "";
 
   // Populate select with all available DPS Type options
-  dpsTypeOptions.forEach((option) => {
+  currentDpsTypeOptions.forEach((option) => {
     const opt = document.createElement("option");
     opt.value = option;
     opt.textContent = option;
@@ -56,30 +58,37 @@ export function setupDpsTypeSidebarManager(dpsTypeOptions) {
   selectedLabel.textContent = defaultType;
 
   // Listen for changes via dropdown or sidebar (click-to-cycle)
-  select.addEventListener("change", (e) => {
-    updateFilterValue("selectedDpsType", select.value);
-    selectedLabel.textContent = select.value;
-  });
+  if (!select.__dpsTypeChangeHandler) {
+    select.__dpsTypeChangeHandler = () => {
+      updateFilterValue("selectedDpsType", select.value);
+      selectedLabel.textContent = select.value;
+    };
+    select.addEventListener("change", select.__dpsTypeChangeHandler);
+  }
 
-  // When the user clicks the persistent label, cycle through options
-  container.addEventListener("click", (e) => {
-    // Cycle to next DPS type
-    let currentIdx = dpsTypeOptions.indexOf(select.value);
-    let nextIdx = (currentIdx + 1) % dpsTypeOptions.length;
-    select.value = dpsTypeOptions[nextIdx];
-    updateFilterValue("selectedDpsType", select.value);
-    selectedLabel.textContent = select.value;
-  });
+  if (!container.__dpsTypeClickHandler) {
+    container.__dpsTypeClickHandler = () => {
+      let currentIdx = currentDpsTypeOptions.indexOf(select.value);
+      if (currentIdx === -1) currentIdx = 0;
+      const nextIdx = (currentIdx + 1) % currentDpsTypeOptions.length;
+      select.value = currentDpsTypeOptions[nextIdx];
+      updateFilterValue("selectedDpsType", select.value);
+      selectedLabel.textContent = select.value;
+    };
+    container.addEventListener("click", container.__dpsTypeClickHandler);
+  }
 
-  // Sync visible label if filterState changes elsewhere
-  subscribeToFilterChanges((state, change) => {
-    if (change && change.key !== "selectedDpsType") return;
-    if (
-      state.selectedDpsType &&
-      selectedLabel.textContent !== state.selectedDpsType
-    ) {
-      selectedLabel.textContent = state.selectedDpsType;
-      select.value = state.selectedDpsType;
-    }
-  });
+  if (!dpsTypeSubscriptionInitialized) {
+    dpsTypeSubscriptionInitialized = true;
+    subscribeToFilterChanges((state, change) => {
+      if (change && change.key !== "selectedDpsType") return;
+      if (
+        state.selectedDpsType &&
+        selectedLabel.textContent !== state.selectedDpsType
+      ) {
+        selectedLabel.textContent = state.selectedDpsType;
+        select.value = state.selectedDpsType;
+      }
+    });
+  }
 }

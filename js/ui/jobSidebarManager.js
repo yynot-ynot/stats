@@ -8,6 +8,8 @@ import { JOB_ICONS, JOB_GROUPS, JOB_COLORS } from "../config/appConfig.js";
 
 const logger = getLogger("jobSidebarManager");
 let jobSidebarSelectionSync = null;
+let collapseHelpersCache = null;
+let sidebarSelectionUnsubscribe = null;
 /**
  * Produce a deterministic signature for the current job selection.
  * Used to detect when updates are redundant so UI redraws can be skipped.
@@ -546,30 +548,35 @@ export function setupJobSidebar(jobList) {
   }
 
   // === Centralized collapse/expand logic ===
-  let collapseHelpers;
   if (sidebar && labelContainer) {
-    // Pass updateSidebarLabelVisibility so label always stays in sync with state
-    collapseHelpers = setupSidebarCollapseHandlers(
-      sidebar,
-      labelContainer,
-      updateSidebarLabelVisibility
-    );
-    // Ensure auto-collapse stays disabled until the first job selection occurs.
-    collapseHelpers.setAutoCollapseEnabled(false);
+    if (!collapseHelpersCache) {
+      collapseHelpersCache = setupSidebarCollapseHandlers(
+        sidebar,
+        labelContainer,
+        updateSidebarLabelVisibility
+      );
 
-    // Initial label visibility on load
-    updateSidebarLabelVisibility();
-    const observer = new MutationObserver(() => {
       updateSidebarLabelVisibility();
-    });
-    observer.observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+      const observer = new MutationObserver(() => {
+        updateSidebarLabelVisibility();
+      });
+      observer.observe(sidebar, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
+    collapseHelpersCache.setAutoCollapseEnabled(false);
   }
 
   // Track last rendered selection signature so slider-only updates don't thrash the mini icons.
   let lastRenderedSignature = null;
 
   // Expand sidebar automatically if no jobs are selected, and update mini icon list only when jobs change.
-  subscribeToFilterChanges((state, change) => {
+  if (typeof sidebarSelectionUnsubscribe === "function") {
+    sidebarSelectionUnsubscribe();
+  }
+
+  sidebarSelectionUnsubscribe = subscribeToFilterChanges((state, change) => {
     if (!sidebar || !labelContainer) return;
     if (!state) return;
     if (change && change.key !== "selectedJobs") return;
@@ -582,12 +589,12 @@ export function setupJobSidebar(jobList) {
     // Open sidebar if no jobs are selected
     const hasSelection =
       state.selectedJobs && state.selectedJobs.size > 0 ? true : false;
-    if (collapseHelpers) {
-      collapseHelpers.setAutoCollapseEnabled(hasSelection);
+    if (collapseHelpersCache) {
+      collapseHelpersCache.setAutoCollapseEnabled(hasSelection);
     }
 
     if (!hasSelection) {
-      collapseHelpers && collapseHelpers.expandSidebar();
+      collapseHelpersCache && collapseHelpersCache.expandSidebar();
       logger.info("No job selected: expanding the job sidebar.");
     } else {
       logger.debug(

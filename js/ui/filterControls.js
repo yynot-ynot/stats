@@ -111,12 +111,13 @@ export function buildBossIndex(data) {
  * @param {string} label - Label used if "All" option is added.
  * @param {Object} [options] - Optional configuration overrides.
  * @param {Object<string, string>} [options.latestDateMap] - Map of item -> latest YYYYMMDD date for sorting.
+ * @param {string} [options.preferredValue] - Selection to preserve when it exists in the option set.
  */
 export function populateDropdown(selectElement, valueSet, label, options = {}) {
   if (!selectElement) return;
 
   const id = selectElement.id;
-  const { latestDateMap } = options;
+  const { latestDateMap, preferredValue } = options;
   const values = sortDropdownValues(Array.from(valueSet), id, latestDateMap);
 
   selectElement.innerHTML = "";
@@ -153,6 +154,11 @@ export function populateDropdown(selectElement, valueSet, label, options = {}) {
     [...selectElement.options].some((opt) => opt.value === defaultValue)
   ) {
     selectElement.value = defaultValue;
+  } else if (
+    preferredValue &&
+    [...selectElement.options].some((opt) => opt.value === preferredValue)
+  ) {
+    selectElement.value = preferredValue;
   } else if (!selectElement.multiple && selectElement.options.length > 0) {
     selectElement.selectedIndex = 0;
     selectElement.value = selectElement.options[0].value;
@@ -246,22 +252,32 @@ export function setupHeaderBindings() {
  * The raid dropdown receives an additional recency-aware ordering map so the newest raids float
  * to the top, while other dropdowns rely on alphabetical or explicit overrides as appropriate.
  *
- * @param {Array<Object>} data - Array of all loaded entries.
+ * @param {Array<Object>} data - Array of loaded entries for the active raid.
+ * @param {Object} [options]
+ * @param {Iterable<string>} [options.raidValues] - Manifest-derived raid options that should remain available even when only one raid's rows are loaded.
+ * @param {Object<string, string>} [options.raidLatestDates] - Manifest-derived latest dates for raid sorting.
+ * @param {string} [options.preferredRaid] - Raid that should remain selected after repopulation.
  */
-export function populateAllFilters(data) {
+export function populateAllFilters(data, options = {}) {
+  const {
+    raidValues,
+    raidLatestDates,
+    preferredRaid,
+  } = options;
+
   // Track each raid's most recent date so the dropdown can surface the newest content first.
-  const raidLatestDates = {};
+  const derivedRaidLatestDates = {};
   data.forEach((entry) => {
     if (!entry.raid || !entry.date) return;
-    const currentLatest = raidLatestDates[entry.raid];
+    const currentLatest = derivedRaidLatestDates[entry.raid];
     if (!currentLatest || entry.date > currentLatest) {
-      raidLatestDates[entry.raid] = entry.date;
+      derivedRaidLatestDates[entry.raid] = entry.date;
     }
   });
 
   bossIndexCache = buildBossIndex(data);
 
-  const raids = new Set(data.map((d) => d.raid));
+  const raids = raidValues ? new Set(raidValues) : new Set(data.map((d) => d.raid));
   const bosses = bossIndexCache.allBosses;
   const percentiles = new Set(data.map((d) => d.percentile));
   const classes = new Set(data.map((d) => d.class));
@@ -270,7 +286,8 @@ export function populateAllFilters(data) {
   );
 
   populateDropdown(document.getElementById("raid-select"), raids, "Raid", {
-    latestDateMap: raidLatestDates,
+    latestDateMap: raidLatestDates || derivedRaidLatestDates,
+    preferredValue: preferredRaid || filterState.selectedRaid,
   });
   populateDropdown(document.getElementById("boss-select"), bosses, "Boss");
   setupRaidBossFiltering();

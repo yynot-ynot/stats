@@ -16,6 +16,7 @@ const logger = getLogger("dataDisplay");
 let globalData = [];
 let activeView = "trend";
 let latestState = null;
+let initialized = false;
 const JOB_SELECTION_PROMPT = "Start by choosing one or more jobs.";
 const TREND_VIEW_SECTION_IDS = Object.freeze([
   "percentile-slider-container",
@@ -41,6 +42,13 @@ export function setupDataDisplayManager(allData) {
   activeView = getCurrentView?.() || activeView;
   latestState = getCurrentFilterState();
   setupPercentileDateSlider(getAvailablePercentileDates(globalData, latestState));
+
+  if (initialized) {
+    handleStateChangeForActiveView(latestState);
+    return;
+  }
+
+  initialized = true;
 
   // Subscribe to all filter state changes
   subscribeToFilterChanges(() => {
