@@ -70,6 +70,7 @@ export async function init() {
   initViewState();
   const initialFiltersFromUrl = parseFilterStateFromUrl();
   isLoading = true;
+  syncActiveRaidLoadingIndicator(true);
   const start = performance.now();
 
   try {
@@ -120,6 +121,7 @@ export async function init() {
     logger.error("Discovery failed:", e);
   } finally {
     isLoading = false;
+    syncActiveRaidLoadingIndicator(false);
   }
 
   const end = performance.now();
@@ -141,6 +143,7 @@ async function activateRaid(raid, options = {}) {
   const { applyUrlFilters = false, urlFilters = null } = options;
   activeRaid = raid;
   isLoading = true;
+  syncActiveRaidLoadingIndicator(true, raid);
   suppressRaidChangeHandling = true;
   raidLoadScheduler.setActiveRaid(raid);
   raidDataStore.markRaidLoading(raid);
@@ -183,6 +186,7 @@ async function activateRaid(raid, options = {}) {
   syncLoadFailureMessage();
   suppressRaidChangeHandling = false;
   isLoading = false;
+  syncActiveRaidLoadingIndicator(false, raid);
 }
 
 /**
@@ -325,6 +329,30 @@ function syncLoadFailureMessage() {
   messageEl.textContent = `Some data files failed to load and are being treated as missing data: ${failedNames.join(", ")}`;
 }
 
+function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
+  const indicatorEl = getOrCreateActiveRaidLoadingElement();
+  if (!indicatorEl) return;
+
+  if (!isVisible) {
+    indicatorEl.classList.add("view-hidden");
+    indicatorEl.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  const activeRaidLabel = raid || activeRaid || "selected raid";
+  indicatorEl.classList.remove("view-hidden");
+  indicatorEl.setAttribute("aria-hidden", "false");
+  indicatorEl.innerHTML = `
+    <div class="active-raid-loading-title">Loading ${escapeHtml(
+      activeRaidLabel
+    )}</div>
+    <div class="active-raid-loading-subtitle">Loading raid data</div>
+    <div class="active-raid-loading-pulse" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+  `;
+}
+
 function getOrCreateLoadMessageElement() {
   if (typeof document === "undefined") return null;
   let el = document.getElementById("load-status-message");
@@ -339,4 +367,30 @@ function getOrCreateLoadMessageElement() {
   el.style.display = "none";
   filters.insertAdjacentElement("afterend", el);
   return el;
+}
+
+function getOrCreateActiveRaidLoadingElement() {
+  if (typeof document === "undefined") return null;
+  let el = document.getElementById("active-raid-loading");
+  if (el) return el;
+
+  const filters = document.getElementById("filters");
+  if (!filters) return null;
+
+  el = document.createElement("div");
+  el.id = "active-raid-loading";
+  el.className = "active-raid-loading view-hidden";
+  el.setAttribute("aria-live", "polite");
+  el.setAttribute("aria-hidden", "true");
+  filters.insertAdjacentElement("afterend", el);
+  return el;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
