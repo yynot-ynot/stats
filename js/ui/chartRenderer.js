@@ -85,6 +85,58 @@ function toISODate(compact) {
 }
 
 /**
+ * Convert a stored FFLogs snapshot date into chart-facing display values. Data
+ * selection still uses the original snapshot date; charts display the effective
+ * date represented by that snapshot, which is one day earlier.
+ * @param {string} snapshotCompactDate
+ * @returns {{
+ *   snapshotCompactDate: string,
+ *   snapshotIsoDate: string,
+ *   effectiveCompactDate: string,
+ *   effectiveIsoDate: string,
+ *   effectiveShortLabel: string,
+ * }}
+ */
+export function getChartDatePresentation(snapshotCompactDate) {
+  if (
+    typeof snapshotCompactDate !== "string" ||
+    !/^\d{8}$/.test(snapshotCompactDate)
+  ) {
+    return {
+      snapshotCompactDate: snapshotCompactDate || "",
+      snapshotIsoDate: snapshotCompactDate || "",
+      effectiveCompactDate: snapshotCompactDate || "",
+      effectiveIsoDate: snapshotCompactDate || "",
+      effectiveShortLabel: snapshotCompactDate || "",
+    };
+  }
+
+  const year = Number(snapshotCompactDate.slice(0, 4));
+  const month = Number(snapshotCompactDate.slice(4, 6));
+  const day = Number(snapshotCompactDate.slice(6, 8));
+  const snapshotUtc = Date.UTC(year, month - 1, day);
+  const effectiveDate = new Date(snapshotUtc - MS_PER_DAY);
+  const effectiveCompactDate =
+    effectiveDate.getUTCFullYear().toString().padStart(4, "0") +
+    String(effectiveDate.getUTCMonth() + 1).padStart(2, "0") +
+    String(effectiveDate.getUTCDate()).padStart(2, "0");
+
+  return {
+    snapshotCompactDate,
+    snapshotIsoDate: toISODate(snapshotCompactDate),
+    effectiveCompactDate,
+    effectiveIsoDate: toISODate(effectiveCompactDate),
+    effectiveShortLabel: `${effectiveDate.getUTCMonth() + 1}/${effectiveDate.getUTCDate()}`,
+  };
+}
+
+function getEffectiveCompactDates(snapshotCompactDates = []) {
+  return snapshotCompactDates.map(
+    (date) => getChartDatePresentation(date).effectiveCompactDate
+  );
+}
+
+/**
  * Convert an ISO date string (YYYY-MM-DD) into a concise "Mon D, YYYY" label.
  * Falls back to the raw ISO string if parsing fails so charts still render a title.
  * @param {string|null} isoDate
@@ -183,9 +235,11 @@ function groupDataByJob(filtered) {
   const allDates = new Set();
 
   filtered.forEach((row) => {
-    const dateObj = parseCompactDate(row.date);
-    const dateStr = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-    const year = dateObj.getFullYear();
+    const datePresentation = getChartDatePresentation(row.date);
+    const dateStr = datePresentation.effectiveShortLabel;
+    const year = parseCompactDate(
+      datePresentation.effectiveCompactDate
+    ).getFullYear();
     allDates.add(row.date);
 
     const jobName = row.job ?? row.class;
@@ -224,10 +278,13 @@ function groupDataByJob(filtered) {
       if (dataByDate[date]) {
         return dataByDate[date];
       } else {
+        const datePresentation = getChartDatePresentation(date);
         // Insert a null Y-value for missing days so Plotly draws gaps.
         return {
-          x: `${parseInt(date.slice(4, 6))}/${parseInt(date.slice(6, 8))}`,
-          year: null,
+          x: datePresentation.effectiveShortLabel,
+          year: parseCompactDate(
+            datePresentation.effectiveCompactDate
+          ).getFullYear(),
           y: null,
           rawDate: date,
           customdata: {
@@ -275,7 +332,7 @@ function prepareTraces(grouped, isDPS) {
       p.y, // raw value
       isDPS ? getAdjustedValueForJob(key, p.y) : p.y, // adjusted value for DPS (halved if composite)
       getDisplayLabelForJob(key), // legend/label
-      toISODate(p.rawDate), // 7: ISO date string (e.g. "2024-06-08")
+      getChartDatePresentation(p.rawDate).effectiveIsoDate, // 7: Effective ISO date string
     ]);
 
     logger.debug(`Trace for job ${key}:`);
@@ -477,15 +534,20 @@ export function renderFilteredLineChart(
     (a, b) => parseCompactDate(a) - parseCompactDate(b)
   );
   const sortedDateLabels = getDateLabels(sortedDates);
+  const effectiveCompactDates = getEffectiveCompactDates(sortedDates);
   const weekAnchor = getWeekStartAnchor({
     raid: filters?.raid,
     boss: filters?.boss,
   });
 
   const traces = prepareTraces(grouped, isDPS);
-  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
-    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
-  });
+  const annotations = generateYearAnnotations(
+    effectiveCompactDates,
+    sortedDateLabels,
+    {
+      singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+    }
+  );
 
   const percentileValue = Number(filters?.percentile);
   const percentileSuffix =
@@ -506,7 +568,12 @@ export function renderFilteredLineChart(
     yAxisTitle,
     true,
     false,
-    { compactDates: sortedDates, weekAnchor }
+    {
+      // Week numbering must align with the displayed effective dates, not the
+      // stored FFLogs snapshot dates.
+      compactDates: effectiveCompactDates,
+      weekAnchor,
+    }
   );
   logTrendChartTiming({
     chartTitle: titleSuffix || "Output",
@@ -560,6 +627,7 @@ export function buildParseTrendSeries(rows) {
       compactDates: [],
       dateLabels: [],
       isoDates: [],
+      effectiveIsoDates: [],
       jobSeries: new Map(),
     };
   }
@@ -567,6 +635,9 @@ export function buildParseTrendSeries(rows) {
   const compactDates = getFullDateRange(Array.from(dateSet));
   const dateLabels = getDateLabels(compactDates);
   const isoDates = compactDates.map((d) => toISODate(d));
+  const effectiveIsoDates = compactDates.map(
+    (d) => getChartDatePresentation(d).effectiveIsoDate
+  );
   const jobSeries = new Map();
 
   jobTotals.forEach((dateMap, jobName) => {
@@ -605,6 +676,7 @@ export function buildParseTrendSeries(rows) {
     compactDates,
     dateLabels,
     isoDates,
+    effectiveIsoDates,
     jobSeries,
   };
 }
@@ -632,6 +704,7 @@ export function renderParseTrendCharts({
     compactDates,
     dateLabels,
     isoDates,
+    effectiveIsoDates,
     jobSeries,
   } = buildParseTrendSeries(filteredRows);
 
@@ -654,15 +727,20 @@ export function renderParseTrendCharts({
       name: jobLabel,
       x: dateLabels,
       y: series.totals,
-      customdata: isoDates.map((iso) => [iso, jobLabel]),
+      customdata: isoDates.map((snapshotIso, index) => [
+        effectiveIsoDates[index],
+        snapshotIso,
+        jobLabel,
+      ]),
       line: { color },
       marker: { color },
       connectgaps: true,
       hoverlabel: createHoverLabelTheme(),
       hovertemplate:
         '<span style="font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;">Parse Total</span><br>' +
-        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[1]}</span>' +
-        '<br><span style="color:#9adece;">Date</span>: %{customdata[0]}' +
+        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[2]}</span>' +
+        '<br><span style="color:#9adece;">Effective Date</span>: %{customdata[0]}' +
+        '<br><span style="color:#9adece;">FFLogs Snapshot Date</span>: %{customdata[1]}' +
         '<br><span style="color:#9adece;">Parses</span>: %{y:,}<extra></extra>',
     };
     totalTraces.push(totalTrace);
@@ -673,8 +751,9 @@ export function renderParseTrendCharts({
       name: jobLabel,
       x: dateLabels,
       y: series.deltas,
-      customdata: isoDates.map((iso, index) => [
-        iso,
+      customdata: isoDates.map((snapshotIso, index) => [
+        effectiveIsoDates[index],
+        snapshotIso,
         jobLabel,
         series.totals[index],
         series.previousTotals[index],
@@ -686,10 +765,11 @@ export function renderParseTrendCharts({
       hoverlabel: createHoverLabelTheme(),
       hovertemplate:
         '<span style="font-size:0.72rem;letter-spacing:0.08em;color:#80bfff;text-transform:uppercase;">Parse Delta</span><br>' +
-        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[1]}</span>' +
-        '<br><span style="color:#9adece;">Date</span>: %{customdata[0]}' +
-        '<br><span style="color:#9adece;">Current Parses</span>: %{customdata[2]:,}' +
-        '<br><span style="color:#9adece;">Previous Parses</span>: %{customdata[3]:,} (%{customdata[4]})' +
+        '<span style="font-size:1rem;font-weight:600;color:#FFFFFF;">%{customdata[2]}</span>' +
+        '<br><span style="color:#9adece;">Effective Date</span>: %{customdata[0]}' +
+        '<br><span style="color:#9adece;">FFLogs Snapshot Date</span>: %{customdata[1]}' +
+        '<br><span style="color:#9adece;">Current Parses</span>: %{customdata[3]:,}' +
+        '<br><span style="color:#9adece;">Previous Parses</span>: %{customdata[4]:,} (%{customdata[5]})' +
         '<br><span style="color:#9adece;">Change</span>: %{y:,}<extra></extra>',
     };
     deltaTraces.push(deltaTrace);
@@ -698,14 +778,19 @@ export function renderParseTrendCharts({
   const prepDurationMs = performance.now() - prepStart;
   const totalContainerId = totalContainer?.id || "parse-total-plot";
   const deltaContainerId = deltaContainer?.id || "parse-delta-plot";
+  const effectiveCompactDates = getEffectiveCompactDates(compactDates);
   const weekAnchor = getWeekStartAnchor({
     raid: filters?.raid,
     boss: filters?.boss,
   });
 
-  const annotations = generateYearAnnotations(compactDates, dateLabels, {
-    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
-  });
+  const annotations = generateYearAnnotations(
+    effectiveCompactDates,
+    dateLabels,
+    {
+      singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+    }
+  );
   const totalPlotStart = performance.now();
   const totalPromise = plotChartWithLayout(
     totalTraces,
@@ -716,7 +801,7 @@ export function renderParseTrendCharts({
     "Total Parses",
     true,
     false,
-    { compactDates, weekAnchor }
+    { compactDates: effectiveCompactDates, weekAnchor }
   );
   logTrendChartTiming({
     chartTitle: "Parse Count over Time",
@@ -728,9 +813,13 @@ export function renderParseTrendCharts({
     traces: totalTraces.length,
     signatureData: buildLogSignatureFromFilters(filters),
   });
-  const deltaAnnotations = generateYearAnnotations(compactDates, dateLabels, {
-    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
-  });
+  const deltaAnnotations = generateYearAnnotations(
+    effectiveCompactDates,
+    dateLabels,
+    {
+      singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+    }
+  );
   const deltaPlotStart = performance.now();
   const deltaPromise = plotChartWithLayout(
     deltaTraces,
@@ -741,7 +830,7 @@ export function renderParseTrendCharts({
     "Parse Count Change",
     true,
     false,
-    { compactDates, weekAnchor }
+    { compactDates: effectiveCompactDates, weekAnchor }
   );
   logTrendChartTiming({
     chartTitle: "Change in Parse Count",
@@ -844,7 +933,7 @@ export function renderComparisonLineChart(
             Math.round(cmpVal),
             diff,
             pctDiff,
-            toISODate(date),
+            getChartDatePresentation(date).effectiveIsoDate,
           ]);
           y.push(diff);
         }
@@ -865,10 +954,7 @@ export function renderComparisonLineChart(
         name: `${getDisplayLabelForJob(jobName)} (${getOrdinal(
           cmp
         )} vs ${getOrdinal(referencePercentile)})`,
-        x: xSorted.map((d) => {
-          const dt = parseCompactDate(d);
-          return `${dt.getMonth() + 1}/${dt.getDate()}`;
-        }),
+        x: xSorted.map((d) => getChartDatePresentation(d).effectiveShortLabel),
         y: ySorted,
         customdata: customSorted,
         hovertemplate: buildComparisonHoverTemplate(),
@@ -885,15 +971,20 @@ export function renderComparisonLineChart(
   // --- X axis setup: use all dates in dateList, labels only every 7 days ---
   const sortedDates = dateList;
   const sortedDateLabels = getDateLabels(sortedDates);
+  const effectiveCompactDates = getEffectiveCompactDates(sortedDates);
   const weekAnchor = getWeekStartAnchor({
     raid: filters?.raid,
     boss: filters?.boss,
   });
 
   // Year annotation(s)
-  const annotations = generateYearAnnotations(sortedDates, sortedDateLabels, {
-    singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
-  });
+  const annotations = generateYearAnnotations(
+    effectiveCompactDates,
+    sortedDateLabels,
+    {
+      singleYearXShift: SINGLE_YEAR_ANNOTATION_SHIFT,
+    }
+  );
 
   const prepDurationMs = performance.now() - prepStart;
   const containerId = container?.id || "comparison-chart";
@@ -907,7 +998,7 @@ export function renderComparisonLineChart(
     "Difference",
     true,
     false,
-    { compactDates: sortedDates, weekAnchor }
+    { compactDates: effectiveCompactDates, weekAnchor }
   );
   logTrendChartTiming({
     chartTitle: titleSuffix,
@@ -1091,7 +1182,9 @@ function renderSinglePercentileChart({
       includeMaxPercentile,
     }
   );
-  const isoDate = selectedDate ? toISODate(selectedDate) : null;
+  const isoDate = selectedDate
+    ? getChartDatePresentation(selectedDate).effectiveIsoDate
+    : null;
 
   if (!selectedDate || buckets.length === 0 || series.size === 0) {
     container.innerHTML = `<div class="chart-empty-message">No ${metricLabel} percentile data available.</div>`;
@@ -1277,10 +1370,9 @@ function getFullDateRange(compactDates) {
  * @returns {string[]} Array of "M/D" labels
  */
 function getDateLabels(compactDates) {
-  return compactDates.map((d) => {
-    const dt = parseCompactDate(d);
-    return `${dt.getMonth() + 1}/${dt.getDate()}`;
-  });
+  return compactDates.map(
+    (d) => getChartDatePresentation(d).effectiveShortLabel
+  );
 }
 
 /**
@@ -1418,8 +1510,11 @@ function getJobColor(jobName) {
 /**
  * Derive tick labels for the chart's x-axis, inserting week numbers that either
  * mirror the configured anchor date or fall back to index-based weeks when no override applies.
- * The axis still surfaces labels at seven-day increments measured from the declared week-one start,
- * which may predate the available dataset; when no override exists we fall back to the first data day.
+ * The compact dates passed here are chart-facing effective dates, so week numbering
+ * stays aligned with the displayed day labels instead of the stored snapshot dates.
+ * The axis still surfaces labels at seven-day increments measured from the declared
+ * week-one start, which may predate the available dataset; when no override exists
+ * we fall back to the first displayed data day.
  * @param {Array<string>} sortedDateLabels
  * @param {Array<string>|null} compactDates
  * @param {{dayIndex: number}|null} weekAnchor
@@ -1512,4 +1607,8 @@ function getDayIndexFromCompact(compact) {
  */
 export function __buildWeekTickConfigForTests(labels, compactDates, weekAnchor) {
   return buildWeekTickConfig(labels, compactDates, weekAnchor);
+}
+
+export function __getChartDatePresentationForTests(snapshotCompactDate) {
+  return getChartDatePresentation(snapshotCompactDate);
 }

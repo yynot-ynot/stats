@@ -5,6 +5,7 @@ import {
   applyFilters,
   buildParseTrendSeries,
   __buildWeekTickConfigForTests,
+  __getChartDatePresentationForTests,
 } from "../js/ui/chartRenderer.js";
 
 /**
@@ -130,8 +131,22 @@ test("applyFilters ignores percentile when slider provides a non-numeric value",
  * Validates that buildParseTrendSeries emits per-job totals while still reserving empty days so chart spacing stays daily.
  */
 test("buildParseTrendSeries fills missing days per job while aggregating parse totals", () => {
-  const { compactDates, jobSeries } = buildParseTrendSeries(PARSE_ROWS);
+  const { compactDates, dateLabels, isoDates, effectiveIsoDates, jobSeries } =
+    buildParseTrendSeries(PARSE_ROWS);
   assert.deepEqual(compactDates, ["20250101", "20250102", "20250103", "20250104"]);
+  assert.deepEqual(dateLabels, ["12/31", "1/1", "1/2", "1/3"]);
+  assert.deepEqual(isoDates, [
+    "2025-01-01",
+    "2025-01-02",
+    "2025-01-03",
+    "2025-01-04",
+  ]);
+  assert.deepEqual(effectiveIsoDates, [
+    "2024-12-31",
+    "2025-01-01",
+    "2025-01-02",
+    "2025-01-03",
+  ]);
   const dkSeries = jobSeries.get("Dark Knight");
   const monkSeries = jobSeries.get("Monk");
   assert.ok(dkSeries, "expected Dark Knight totals to be present");
@@ -151,6 +166,31 @@ test("buildParseTrendSeries derives per-job deltas relative to the last report",
   assert.deepEqual(dkSeries.previousTotals, [null, 120, 120, 60]);
   assert.deepEqual(monkSeries.deltas, [null, null, null, 40]);
   assert.deepEqual(monkSeries.previousTotals, [null, null, null, 40]);
+});
+
+test("chart date presentation shifts snapshot dates back one day for display", () => {
+  assert.deepEqual(__getChartDatePresentationForTests("20260411"), {
+    snapshotCompactDate: "20260411",
+    snapshotIsoDate: "2026-04-11",
+    effectiveCompactDate: "20260410",
+    effectiveIsoDate: "2026-04-10",
+    effectiveShortLabel: "4/10",
+  });
+});
+
+test("chart date presentation handles month, year, and leap-year boundaries", () => {
+  assert.equal(
+    __getChartDatePresentationForTests("20250301").effectiveIsoDate,
+    "2025-02-28",
+  );
+  assert.equal(
+    __getChartDatePresentationForTests("20250101").effectiveIsoDate,
+    "2024-12-31",
+  );
+  assert.equal(
+    __getChartDatePresentationForTests("20240301").effectiveIsoDate,
+    "2024-02-29",
+  );
 });
 
 /**

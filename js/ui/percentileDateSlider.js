@@ -4,6 +4,7 @@ import {
   subscribeToFilterChanges,
 } from "../shared/filterState.js";
 import { getLogger } from "../shared/logging/logger.js";
+import { getChartDatePresentation } from "./chartRenderer.js";
 
 const logger = getLogger("percentileDateSlider");
 const SLIDER_CONTAINER_SELECTOR = "[data-role='percentile-date-slider']";
@@ -250,7 +251,8 @@ function setSlidersToDate(date, { updateFilter }) {
  */
 function updateInstanceDisplay(instance, date) {
   if (!instance || !instance.labelEl) return;
-  instance.labelEl.textContent = formatDateLabel(date);
+  instance.labelEl.textContent =
+    getChartDatePresentation(date).effectiveShortLabel;
 }
 
 /**
@@ -267,13 +269,6 @@ function updateMaxToggleUiForAll(isVisible) {
     if (!button) return;
     button.setAttribute("aria-pressed", String(isVisible));
   });
-}
-
-function formatDateLabel(compact) {
-  if (!compact || compact.length !== 8) return compact || "";
-  const month = Number(compact.slice(4, 6));
-  const day = Number(compact.slice(6, 8));
-  return `${month}/${day}`;
 }
 
 /**

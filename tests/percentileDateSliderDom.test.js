@@ -127,7 +127,7 @@ test("pinned percentile date slider updates filter state and label", () => {
     primary.slider.listeners.input();
 
     assert.equal(filterState.selectedPercentileDate, "20240101");
-    assert.equal(primary.label.textContent, "1/1");
+    assert.equal(primary.label.textContent, "12/31");
   } finally {
     filterState.selectedPercentileDate = originalDate;
     global.document = originalDocument;

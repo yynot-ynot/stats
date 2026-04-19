@@ -1,4 +1,5 @@
 import { VALID_PERCENTILES } from "../logic/percentileGapMatrix.js";
+import { getChartDatePresentation } from "./chartRenderer.js";
 
 const VIRIDIS_COLORS = [
   [242, 236, 221],
@@ -341,7 +342,7 @@ function formatValue(value) {
 
 function formatDate(compact) {
   if (!compact || compact.length !== 8) return compact || "n/a";
-  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  return getChartDatePresentation(compact).effectiveIsoDate;
 }
 
 function formatDiffLabel(value) {

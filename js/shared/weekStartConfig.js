@@ -12,6 +12,8 @@ let activeAnchors = { ...defaultAnchors };
  * Resolve the configured week-one anchor for the provided raid/boss selection.
  * The helper checks for a boss-specific override first, then falls back to a raid-wide date,
  * and finally returns null so the charts derive week numbers from the visible dataset.
+ * Anchors are interpreted as effective dates so week labels stay aligned with the
+ * chart's displayed day labels rather than the stored FFLogs snapshot dates.
  * @param {{raid?: string, boss?: string}} params
  * @returns {{iso: string, compact: string, dayIndex: number}|null}
  */

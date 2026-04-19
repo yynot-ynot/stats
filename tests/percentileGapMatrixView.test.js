@@ -217,6 +217,45 @@ test("cells map 0, half, and max deltas to beige/teal/violet stops", () => {
     "Max delta should use the violet Viridis stop."
   );
 });
+
+test("gap matrix header shows the effective date instead of the snapshot date", () => {
+  const originalDocument = global.document;
+  global.document = createMockDocument();
+
+  const container = new MockElement("section");
+  const matrixData = {
+    percentiles: VALID_PERCENTILES,
+    colorScale: { domainMin: 0, domainMax: 500 },
+    categories: [
+      {
+        name: "Tank",
+        tiles: [
+          {
+            jobName: "Paladin",
+            snapshotDate: "20240101",
+            cellMap: new Map(),
+            hasAnyValue: false,
+          },
+        ],
+      },
+    ],
+  };
+
+  try {
+    renderPercentileGapMatrixView({
+      container,
+      matrixData,
+      valueLabel: "rDPS",
+    });
+  } finally {
+    global.document = originalDocument;
+  }
+
+  const dateLabel = findChildByClass(container, "gap-matrix-date");
+  assert.ok(dateLabel, "Gap matrix date label should exist.");
+  assert.equal(dateLabel.textContent, "2023-12-31");
+});
+
 const VIRIDIS_COLORS = [
   [242, 236, 221],
   [180, 222, 44],
