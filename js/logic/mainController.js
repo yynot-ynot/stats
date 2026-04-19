@@ -332,11 +332,28 @@ function syncLoadFailureMessage() {
 function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
   const indicatorEl = getOrCreateActiveRaidLoadingElement();
   if (!indicatorEl) return;
+  const trendPlaceholder = document.getElementById("trend-view-placeholder");
 
   if (!isVisible) {
     indicatorEl.classList.add("view-hidden");
     indicatorEl.setAttribute("aria-hidden", "true");
+    if (trendPlaceholder) {
+      // Restore whatever visibility state the placeholder had before the active
+      // raid banner temporarily suppressed it.
+      const previousDisplay = trendPlaceholder.dataset.preLoadDisplay;
+      if (typeof previousDisplay === "string") {
+        trendPlaceholder.style.display = previousDisplay;
+        delete trendPlaceholder.dataset.preLoadDisplay;
+      }
+    }
     return;
+  }
+
+  if (trendPlaceholder && !("preLoadDisplay" in trendPlaceholder.dataset)) {
+    // While the active raid banner is visible, hide the generic dashed trend
+    // placeholder so the loader becomes the only empty-state affordance.
+    trendPlaceholder.dataset.preLoadDisplay = trendPlaceholder.style.display;
+    trendPlaceholder.style.display = "none";
   }
 
   const activeRaidLabel = raid || activeRaid || "selected raid";

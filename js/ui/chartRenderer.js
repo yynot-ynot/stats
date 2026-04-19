@@ -585,6 +585,7 @@ export function renderFilteredLineChart(
     traces: traces.length,
     signatureData: buildLogSignatureFromFilters(filters),
   });
+  return plotPromise;
 }
 
 /**
@@ -698,7 +699,7 @@ export function renderParseTrendCharts({
   deltaContainer,
 }) {
   const prepStart = performance.now();
-  if (!totalContainer || !deltaContainer) return;
+  if (!totalContainer || !deltaContainer) return Promise.resolve();
   const filteredRows = applyFilters(data, filters, false);
   const {
     compactDates,
@@ -713,7 +714,7 @@ export function renderParseTrendCharts({
       '<div class="chart-empty-message">No parse data available for the current selection.</div>';
     totalContainer.innerHTML = emptyMarkup;
     deltaContainer.innerHTML = emptyMarkup;
-    return;
+    return Promise.resolve();
   }
 
   const totalTraces = [];
@@ -792,6 +793,8 @@ export function renderParseTrendCharts({
     }
   );
   const totalPlotStart = performance.now();
+  // Surface Plotly's completion promises so callers can keep loader state
+  // visible until the browser has finished drawing the active charts.
   const totalPromise = plotChartWithLayout(
     totalTraces,
     totalContainer,
@@ -842,6 +845,7 @@ export function renderParseTrendCharts({
     traces: deltaTraces.length,
     signatureData: buildLogSignatureFromFilters(filters),
   });
+  return Promise.all([totalPromise, deltaPromise]);
 }
 
 /**
@@ -1016,6 +1020,7 @@ export function renderComparisonLineChart(
         : [],
     }),
   });
+  return plotPromise;
 }
 
 const lastRenderSignatures = new Map();
@@ -1147,9 +1152,15 @@ export function renderPercentileCharts({
   dpsContainer.previousElementSibling.textContent = `${
     dpsLabel || "DPS"
   } Percentile`;
+  const plotPromises = [dpsResult.plotPromise, hpsResult.plotPromise].filter(
+    (promise) => promise && typeof promise.then === "function"
+  );
   return {
     renderedAny: dpsResult.rendered || hpsResult.rendered,
     selectedIsoDate: dpsResult.isoDate || hpsResult.isoDate,
+    plotPromise: plotPromises.length
+      ? Promise.all(plotPromises)
+      : Promise.resolve(),
   };
 }
 
@@ -1161,7 +1172,7 @@ export function renderPercentileCharts({
  * @param {Object} options
  * @param {string} [options.targetDate] - Preferred compact date; falls back to most recent snapshot.
  * @param {boolean} [options.includeMaxPercentile=true] - Whether to keep the 100th percentile rows in bucket calculations.
- * @returns {{rendered: boolean, isoDate: (string|null)}}
+ * @returns {{rendered: boolean, isoDate: (string|null), plotPromise: Promise<unknown>|null}}
  */
 function renderSinglePercentileChart({
   data,
@@ -1172,7 +1183,7 @@ function renderSinglePercentileChart({
   targetDate,
   includeMaxPercentile = true,
 }) {
-  if (!container) return { rendered: false, isoDate: null };
+  if (!container) return { rendered: false, isoDate: null, plotPromise: null };
   const { selectedDate, buckets, series, valueRange } = buildPercentileSeries(
     data,
     filters,
@@ -1188,7 +1199,7 @@ function renderSinglePercentileChart({
 
   if (!selectedDate || buckets.length === 0 || series.size === 0) {
     container.innerHTML = `<div class="chart-empty-message">No ${metricLabel} percentile data available.</div>`;
-    return { rendered: false, isoDate };
+    return { rendered: false, isoDate, plotPromise: null };
   }
 
   const minPercentile = Math.min(...buckets);
@@ -1270,8 +1281,10 @@ function renderSinglePercentileChart({
     hoverlabel: createHoverLabelTheme(),
   };
 
-  Plotly.newPlot(container, traces, layout, { responsive: true });
-  return { rendered: true, isoDate };
+  const plotPromise = Plotly.newPlot(container, traces, layout, {
+    responsive: true,
+  });
+  return { rendered: true, isoDate, plotPromise };
 }
 
 /**

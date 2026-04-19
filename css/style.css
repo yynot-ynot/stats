@@ -358,6 +358,73 @@ th {
   margin-top: 2rem;
 }
 
+.chart-render-host {
+  position: relative;
+  min-height: 420px;
+}
+
+.chart-render-surface {
+  min-height: 420px;
+}
+
+.chart-render-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem 1.25rem 1.25rem;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chart-render-status-card {
+  width: min(100%, 540px);
+  padding: 1.5rem 1.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(124, 199, 255, 0.45);
+  background: rgba(15, 24, 34, 0.92);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.38);
+  text-align: center;
+  backdrop-filter: blur(3px);
+}
+
+.chart-render-status-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #eef7ff;
+}
+
+.chart-render-status-subtitle {
+  margin-top: 0.45rem;
+  font-size: 1rem;
+  color: #b8d8ff;
+}
+
+.chart-render-status-pulse {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.chart-render-status-pulse span {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #7cc7ff;
+  box-shadow: 0 0 16px rgba(124, 199, 255, 0.75);
+  animation: active-raid-loading-bounce 1.1s infinite ease-in-out;
+}
+
+.chart-render-status-pulse span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chart-render-status-pulse span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
 /* Comparison message styling */
 #comparison-message {
   margin-top: 1rem;

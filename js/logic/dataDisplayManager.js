@@ -17,6 +17,7 @@ let globalData = [];
 let activeView = "trend";
 let latestState = null;
 let initialized = false;
+let trendRenderCycle = 0;
 const JOB_SELECTION_PROMPT = "Start by choosing one or more jobs.";
 const TREND_VIEW_SECTION_IDS = Object.freeze([
   "percentile-slider-container",
@@ -165,6 +166,10 @@ function updateChart(state) {
   const parseDeltaContainer = document.getElementById(
     "parse-delta-plot-container"
   );
+  const dpsSurface = getChartRenderSurface(dpsContainer, "main");
+  const healingSurface = getChartRenderSurface(healingContainer, "main");
+  const parseTotalSurface = getChartRenderSurface(parseTotalContainer, "main");
+  const parseDeltaSurface = getChartRenderSurface(parseDeltaContainer, "main");
 
   logger.debug("Updating chart with filters:");
   logger.debug(`DPS Filters: ${JSON.stringify(dpsFilters)}`);
@@ -176,28 +181,41 @@ function updateChart(state) {
     selectedDpsType && selectedDpsType !== "All"
       ? formatDpsMetricTitle(selectedDpsType)
       : "DPS";
+  const renderCycle = ++trendRenderCycle;
+  showTrendRenderStatus();
 
   import(`../ui/chartRenderer.js`).then(
     ({ renderFilteredLineChart, renderParseTrendCharts }) => {
-      renderFilteredLineChart(
-        dpsData,
-        dpsFilters,
-        dpsContainer,
-        dpsMetricTitle
-      );
-      renderFilteredLineChart(
-        healingData,
-        healingFilters,
-        healingContainer,
-        "Healing"
-      );
-      // Surface aggregate parse counts so analysts can immediately gauge data volume trends.
-      renderParseTrendCharts({
-        data: dpsData,
-        filters: dpsFilters,
-        totalContainer: parseTotalContainer,
-        deltaContainer: parseDeltaContainer,
-      });
+      const renderPromises = [
+        renderFilteredLineChart(
+          dpsData,
+          dpsFilters,
+          dpsSurface,
+          dpsMetricTitle
+        ),
+        renderFilteredLineChart(
+          healingData,
+          healingFilters,
+          healingSurface,
+          "Healing"
+        ),
+        renderParseTrendCharts({
+          data: dpsData,
+          filters: dpsFilters,
+          totalContainer: parseTotalSurface,
+          deltaContainer: parseDeltaSurface,
+        }),
+      ].filter((promise) => promise && typeof promise.then === "function");
+
+      Promise.all(renderPromises)
+        .catch((error) => {
+          logger.warn("Trend chart render did not complete cleanly.", error);
+        })
+        .finally(() => {
+          if (renderCycle === trendRenderCycle) {
+            hideTrendRenderStatus();
+          }
+        });
     }
   );
 }
@@ -491,6 +509,8 @@ export function toggleTrendViewVisibility(hasJobSelection) {
     targets.forEach((node) => node.classList.remove("view-hidden"));
     if (placeholder) placeholder.style.display = "none";
   } else {
+    trendRenderCycle += 1;
+    hideTrendRenderStatus();
     targets.forEach((node) => node.classList.add("view-hidden"));
     if (placeholder) {
       placeholder.textContent = JOB_SELECTION_PROMPT;
@@ -499,6 +519,68 @@ export function toggleTrendViewVisibility(hasJobSelection) {
   }
 }
 
+function getChartRenderSurface(container, suffix = "surface") {
+  if (!container) return null;
+  container.classList.add("chart-render-host");
+  if (typeof container.querySelector !== "function") {
+    return container;
+  }
+  let surface = container.querySelector(".chart-render-surface");
+  if (surface) return surface;
+
+  surface = document.createElement("div");
+  surface.className = "chart-render-surface";
+  surface.id = `${container.id}-${suffix}`;
+  container.appendChild(surface);
+  return surface;
+}
+
+/**
+ * Mount an in-slot status card over the first trend chart while Plotly is still
+ * resolving the active render cycle so the chart area keeps a stable footprint.
+ */
+function showTrendRenderStatus() {
+  const dpsContainer = document.getElementById("dps-plot-container");
+  if (!dpsContainer) return;
+  if (typeof dpsContainer.querySelector !== "function") return;
+
+  dpsContainer.classList.add("chart-render-host");
+  let statusEl = dpsContainer.querySelector(".chart-render-status");
+  if (!statusEl) {
+    statusEl = document.createElement("div");
+    statusEl.className = "chart-render-status";
+    dpsContainer.appendChild(statusEl);
+  }
+
+  statusEl.innerHTML = `
+    <div class="chart-render-status-card">
+      <div class="chart-render-status-title">Rendering charts</div>
+      <div class="chart-render-status-subtitle">Drawing the active raid graphs</div>
+      <div class="chart-render-status-pulse" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  `;
+  statusEl.classList.remove("view-hidden");
+}
+
+/**
+ * Hide the in-slot render status once the latest trend render cycle settles or
+ * when trend-only sections are collapsed because selections are incomplete.
+ */
+function hideTrendRenderStatus() {
+  const dpsContainer = document.getElementById("dps-plot-container");
+  if (!dpsContainer || typeof dpsContainer.querySelector !== "function") return;
+  const statusEl = dpsContainer?.querySelector(".chart-render-status");
+  if (!statusEl) return;
+  statusEl.classList.add("view-hidden");
+}
+
 export const __comparisonTestUtils = {
   hasValidReferencePercentile,
+};
+
+export const __trendRenderTestUtils = {
+  showTrendRenderStatus,
+  hideTrendRenderStatus,
 };

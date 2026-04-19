@@ -4,14 +4,67 @@ import assert from "node:assert/strict";
 import {
   toggleTrendViewVisibility,
   __comparisonTestUtils,
+  __trendRenderTestUtils,
 } from "../js/logic/dataDisplayManager.js";
 
 const { hasValidReferencePercentile } = __comparisonTestUtils;
+const { showTrendRenderStatus, hideTrendRenderStatus } = __trendRenderTestUtils;
 
 function createElementWithClassList(initialClasses = []) {
   const classes = new Set(initialClasses);
   return {
     style: {},
+    classList: {
+      add(cls) {
+        classes.add(cls);
+      },
+      remove(cls) {
+        classes.delete(cls);
+      },
+      contains(cls) {
+        return classes.has(cls);
+      },
+    },
+  };
+}
+
+function createRenderHost() {
+  const classes = new Set();
+  const children = [];
+  return {
+    style: {},
+    classList: {
+      add(cls) {
+        classes.add(cls);
+      },
+      remove(cls) {
+        classes.delete(cls);
+      },
+      contains(cls) {
+        return classes.has(cls);
+      },
+    },
+    appendChild(node) {
+      children.push(node);
+      return node;
+    },
+    querySelector(selector) {
+      if (selector === ".chart-render-status") {
+        return children.find((child) =>
+          child.className?.split(" ").includes("chart-render-status")
+        );
+      }
+      return null;
+    },
+    __children: children,
+  };
+}
+
+function createStatusNode() {
+  const classes = new Set();
+  return {
+    className: "",
+    innerHTML: "",
     classList: {
       add(cls) {
         classes.add(cls);
@@ -165,4 +218,48 @@ test("hasValidReferencePercentile treats Min/Max selections as valid numbers", (
   assert.equal(hasValidReferencePercentile(""), false);
   assert.equal(hasValidReferencePercentile(null), false);
   assert.equal(hasValidReferencePercentile("All"), false);
+});
+
+test("showTrendRenderStatus mounts a render-status overlay in the first chart slot", () => {
+  const dpsContainer = createRenderHost();
+  const originalDocument = global.document;
+  global.document = {
+    getElementById(id) {
+      return id === "dps-plot-container" ? dpsContainer : null;
+    },
+    createElement() {
+      return createStatusNode();
+    },
+  };
+
+  try {
+    showTrendRenderStatus();
+    const statusEl = dpsContainer.querySelector(".chart-render-status");
+    assert.ok(statusEl, "status overlay should be created");
+    assert.match(statusEl.innerHTML, /Rendering charts/);
+    assert.ok(!statusEl.classList.contains("view-hidden"));
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test("hideTrendRenderStatus hides the existing render-status overlay", () => {
+  const dpsContainer = createRenderHost();
+  const statusEl = createStatusNode();
+  statusEl.className = "chart-render-status";
+  dpsContainer.appendChild(statusEl);
+
+  const originalDocument = global.document;
+  global.document = {
+    getElementById(id) {
+      return id === "dps-plot-container" ? dpsContainer : null;
+    },
+  };
+
+  try {
+    hideTrendRenderStatus();
+    assert.ok(statusEl.classList.contains("view-hidden"));
+  } finally {
+    global.document = originalDocument;
+  }
 });
