@@ -24,6 +24,7 @@ import { initViewState } from "../shared/viewState.js";
 import {
   populateAllFilters,
   setupHeaderBindings,
+  populateDropdown,
 } from "../ui/filterControls.js";
 import {
   setupJobSidebar,
@@ -48,7 +49,12 @@ let activeRaid = "";
 let chromeInitialized = false;
 let filterUrlSyncStarted = false;
 let raidChangeListenerInitialized = false;
-let suppressRaidChangeHandling = false;
+let activationInFlightPromise = null;
+let requestedRaid = "";
+let requestedRaidOptions = null;
+let raidRequestVersion = 0;
+let processingRaid = "";
+const activationWaiters = new Set();
 const finalFailedFiles = new Map();
 
 /**
@@ -100,12 +106,13 @@ export async function init() {
       `Discovered ${files.length} files to load. (in ${(t2 - t1).toFixed(1)}ms)`
     );
 
-    ensureRaidChangeListener();
     const effectiveRaid = resolveEffectiveRaid(
       manifestIndex,
       initialFiltersFromUrl.selectedRaid
     );
-    await activateRaid(effectiveRaid, {
+    primeManifestRaidSelection(effectiveRaid);
+    ensureRaidChangeListener();
+    await requestRaidActivation(effectiveRaid, {
       applyUrlFilters: true,
       urlFilters: initialFiltersFromUrl,
     });
@@ -129,8 +136,10 @@ export async function init() {
 }
 
 /**
- * Load the active raid, derive its row-driven UI state, and activate that raid
- * as the current app context without restoring prior user-made selections.
+ * Load the currently requested raid, derive its row-driven UI state, and
+ * activate that raid as the current app context without restoring prior
+ * user-made selections. If a newer raid request arrives while the current load
+ * is in flight, this activation exits early and lets the newer request win.
  *
  * @param {string} raid
  * @param {Object} options
@@ -141,52 +150,155 @@ async function activateRaid(raid, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
 
   const { applyUrlFilters = false, urlFilters = null } = options;
-  activeRaid = raid;
+  processingRaid = raid;
+  try {
+    isLoading = true;
+    syncActiveRaidLoadingIndicator(true, raid);
+    raidLoadScheduler.setActiveRaid(raid);
+    raidDataStore.markRaidLoading(raid);
+
+    const tRaidLoadStart = performance.now();
+    const requestVersion = raidRequestVersion;
+    const supersedeWaiter = createSupersedingRaidWaiter(raid, requestVersion);
+    const activationOutcome = await Promise.race([
+      raidLoadScheduler.prioritizeRaid(raid).then(() => "loaded"),
+      supersedeWaiter.promise,
+    ]);
+    supersedeWaiter.cancel();
+    if (activationOutcome === "superseded") {
+      return;
+    }
+    if (requestedRaid && requestedRaid !== raid) {
+      return;
+    }
+
+    activeRaid = raid;
+    const activeRaidRows = raidDataStore.getRaidRows(raid);
+    const tRaidLoadEnd = performance.now();
+    logger.debug(
+      `Activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
+    );
+
+    setupDataDisplayManager(activeRaidRows);
+    populateAllFilters(activeRaidRows, {
+      raidValues: manifestIndex.sortedRaids,
+      raidLatestDates: manifestIndex.latestDateByRaid,
+      preferredRaid: raid,
+    });
+
+    if (!chromeInitialized) {
+      setupHeaderBindings();
+      setupViewSwitcher();
+      chromeInitialized = true;
+    }
+
+    const dpsTypes = Array.from(
+      new Set(activeRaidRows.filter((d) => d.dps_type).map((d) => d.dps_type))
+    );
+    setupDpsTypeSidebarManager(dpsTypes);
+
+    const uniqueJobs = Array.from(new Set(activeRaidRows.map((d) => d.class)));
+    setupJobSidebar(uniqueJobs);
+
+    if (applyUrlFilters) {
+      applyInitialFiltersFromUrl(urlFilters);
+    } else {
+      resetSelectionsForRaidActivation();
+    }
+
+    syncLoadFailureMessage();
+    isLoading = false;
+    syncActiveRaidLoadingIndicator(false, raid);
+  } finally {
+    if (processingRaid === raid) {
+      processingRaid = "";
+    }
+  }
+}
+
+/**
+ * Record the latest requested raid and ensure the controller eventually
+ * activates it. While another activation is already running, this acts as a
+ * last-selection-wins queue and immediately updates scheduler priority.
+ *
+ * @param {string} raid
+ * @param {Object} options
+ * @returns {Promise<void>}
+ */
+function requestRaidActivation(raid, options = {}) {
+  if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
+    return Promise.resolve();
+  }
+  if (activationInFlightPromise && raid === processingRaid) {
+    return activationInFlightPromise;
+  }
+
+  requestedRaid = raid;
+  requestedRaidOptions = options;
+  raidRequestVersion += 1;
   isLoading = true;
   syncActiveRaidLoadingIndicator(true, raid);
-  suppressRaidChangeHandling = true;
   raidLoadScheduler.setActiveRaid(raid);
   raidDataStore.markRaidLoading(raid);
+  notifyActivationWaiters();
 
-  const tRaidLoadStart = performance.now();
-  await raidLoadScheduler.prioritizeRaid(raid);
-  const activeRaidRows = raidDataStore.getRaidRows(raid);
-  const tRaidLoadEnd = performance.now();
-  logger.debug(
-    `Activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
-  );
+  if (activationInFlightPromise) {
+    return activationInFlightPromise;
+  }
 
-  setupDataDisplayManager(activeRaidRows);
-  populateAllFilters(activeRaidRows, {
-    raidValues: manifestIndex.sortedRaids,
-    raidLatestDates: manifestIndex.latestDateByRaid,
-    preferredRaid: raid,
+  activationInFlightPromise = processRequestedRaidActivations().finally(() => {
+    activationInFlightPromise = null;
+  });
+  return activationInFlightPromise;
+}
+
+async function processRequestedRaidActivations() {
+  while (requestedRaid) {
+    const raid = requestedRaid;
+    const options = requestedRaidOptions || {};
+    requestedRaid = "";
+    requestedRaidOptions = null;
+    await activateRaid(raid, options);
+  }
+}
+
+/**
+ * Allow an in-flight activation to stop waiting once a different raid has been
+ * requested. The scheduler still finishes any already-started file work, but
+ * the controller no longer applies stale row-driven UI to the superseded raid.
+ *
+ * @param {string} raid
+ * @param {number} requestVersion
+ * @returns {{promise: Promise<string>, cancel: () => void}}
+ */
+function createSupersedingRaidWaiter(raid, requestVersion) {
+  let waiter = null;
+  const promise = new Promise((resolve) => {
+    waiter = () => {
+      if (
+        raidRequestVersion !== requestVersion &&
+        requestedRaid &&
+        requestedRaid !== raid
+      ) {
+        activationWaiters.delete(waiter);
+        resolve("superseded");
+      }
+    };
+    activationWaiters.add(waiter);
   });
 
-  if (!chromeInitialized) {
-    setupHeaderBindings();
-    setupViewSwitcher();
-    chromeInitialized = true;
-  }
+  return {
+    promise,
+    cancel() {
+      if (waiter) {
+        activationWaiters.delete(waiter);
+      }
+    },
+  };
+}
 
-  const dpsTypes = Array.from(
-    new Set(activeRaidRows.filter((d) => d.dps_type).map((d) => d.dps_type))
-  );
-  setupDpsTypeSidebarManager(dpsTypes);
-
-  const uniqueJobs = Array.from(new Set(activeRaidRows.map((d) => d.class)));
-  setupJobSidebar(uniqueJobs);
-
-  if (applyUrlFilters) {
-    applyInitialFiltersFromUrl(urlFilters);
-  } else {
-    resetSelectionsForRaidActivation();
-  }
-
-  syncLoadFailureMessage();
-  suppressRaidChangeHandling = false;
-  isLoading = false;
-  syncActiveRaidLoadingIndicator(false, raid);
+function notifyActivationWaiters() {
+  Array.from(activationWaiters).forEach((waiter) => waiter());
 }
 
 /**
@@ -295,12 +407,15 @@ function ensureRaidChangeListener() {
   subscribeToFilterChanges((state, change) => {
     if (!change || change.key !== "selectedRaid") return;
     const nextRaid = state.selectedRaid || "";
-    if (!nextRaid || nextRaid === activeRaid || suppressRaidChangeHandling) {
+    if (!nextRaid) {
+      return;
+    }
+    if (nextRaid === activeRaid && !activationInFlightPromise) {
       return;
     }
 
     updateFilterValue("selectedJobs", new Set());
-    activateRaid(nextRaid)
+    requestRaidActivation(nextRaid)
       .then(() => {
         if (filterUrlSyncStarted) {
           broadcastCurrentFilters();
@@ -310,6 +425,26 @@ function ensureRaidChangeListener() {
         logger.error(`Failed to activate raid "${nextRaid}"`, error);
       });
   });
+}
+
+function primeManifestRaidSelection(effectiveRaid) {
+  const raidSelect = document.getElementById("raid-select");
+  const bossSelect = document.getElementById("boss-select");
+  if (!raidSelect || !bossSelect || !manifestIndex) {
+    return;
+  }
+
+  populateDropdown(raidSelect, new Set(manifestIndex.sortedRaids), "Raid", {
+    latestDateMap: manifestIndex.latestDateByRaid,
+    preferredValue: effectiveRaid,
+  });
+  populateDropdown(bossSelect, new Set(), "Boss");
+
+  if (!chromeInitialized) {
+    setupHeaderBindings();
+    setupViewSwitcher();
+    chromeInitialized = true;
+  }
 }
 
 function syncLoadFailureMessage() {

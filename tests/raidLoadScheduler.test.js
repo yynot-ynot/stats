@@ -100,3 +100,43 @@ test("scheduler retries a failed priority file once before surfacing final failu
   assert.deepEqual(failures, [["json/a-1.json.gz", "fail-2"]]);
   assert.equal(scheduler.getFileState("json/a-1.json.gz").status, "failed");
 });
+
+test("scheduler reprioritizes the latest active raid before older queued files", async () => {
+  const started = [];
+  const deferredByPath = new Map();
+
+  const allFiles = [
+    { path: "json/a-1.json.gz", raid: "Raid A" },
+    { path: "json/a-2.json.gz", raid: "Raid A" },
+    { path: "json/b-1.json.gz", raid: "Raid B" },
+  ];
+
+  const scheduler = createRaidLoadScheduler({
+    allFiles,
+    filesByRaid: new Map([
+      ["Raid A", allFiles.filter((file) => file.raid === "Raid A")],
+      ["Raid B", allFiles.filter((file) => file.raid === "Raid B")],
+    ]),
+    backgroundConcurrency: 1,
+    loadFile: async (record) => {
+      started.push(record.path);
+      const deferred = createDeferred();
+      deferredByPath.set(record.path, deferred);
+      return deferred.promise;
+    },
+    onFileLoaded() {},
+    onFileFailed() {},
+  });
+
+  void scheduler.prioritizeRaid("Raid A");
+  assert.deepEqual(started, ["json/a-1.json.gz"]);
+
+  const raidBPromise = scheduler.prioritizeRaid("Raid B");
+  deferredByPath.get("json/a-1.json.gz").resolve([]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(started, ["json/a-1.json.gz", "json/b-1.json.gz"]);
+
+  deferredByPath.get("json/b-1.json.gz").resolve([]);
+  await raidBPromise;
+});

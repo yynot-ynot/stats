@@ -33,20 +33,22 @@ export function createRaidLoadScheduler(config) {
 
   let activeRaid = "";
   let backgroundEnabled = false;
-  let backgroundInFlight = 0;
+  let inFlight = 0;
+  const raidWaiters = new Map();
 
   /**
-   * Attempt every file for the active raid immediately. Files already loading
-   * are reused, and a first failure is retried once at active priority.
+   * Raise the supplied raid to the front of the shared per-file queue and
+   * resolve once that raid's files have all reached a terminal state. Any
+   * already in-flight file is allowed to finish first, but later queue picks
+   * always favor the latest active raid.
    *
    * @param {string} raid
    * @returns {Promise<void>}
    */
   async function prioritizeRaid(raid) {
     activeRaid = raid;
-    const files = filesByRaid.get(raid) || [];
-    await Promise.all(files.map((record) => ensurePriorityLoad(record)));
-    pumpBackgroundQueue();
+    pumpQueue();
+    await waitForRaidTerminal(raid);
   }
 
   /**
@@ -55,7 +57,7 @@ export function createRaidLoadScheduler(config) {
    */
   function startBackgroundLoading() {
     backgroundEnabled = true;
-    pumpBackgroundQueue();
+    pumpQueue();
   }
 
   /**
@@ -65,7 +67,7 @@ export function createRaidLoadScheduler(config) {
    */
   function setActiveRaid(raid) {
     activeRaid = raid;
-    pumpBackgroundQueue();
+    pumpQueue();
   }
 
   /**
@@ -79,75 +81,61 @@ export function createRaidLoadScheduler(config) {
     return fileStateByPath.get(filePath);
   }
 
-  function pumpBackgroundQueue() {
-    if (!backgroundEnabled) return;
-
-    while (backgroundInFlight < backgroundConcurrency) {
-      const nextRecord = getNextBackgroundRecord();
+  function pumpQueue() {
+    while (inFlight < backgroundConcurrency) {
+      const nextRecord = getNextRecord();
       if (!nextRecord) return;
-
-      backgroundInFlight += 1;
-      ensureBackgroundLoad(nextRecord).finally(() => {
-        backgroundInFlight = Math.max(0, backgroundInFlight - 1);
-        pumpBackgroundQueue();
-      });
+      startLoad(nextRecord);
     }
   }
 
-  function getNextBackgroundRecord() {
+  function getNextRecord() {
+    const activeRecord = getNextRecordForRaid(activeRaid);
+    if (activeRecord) {
+      return activeRecord;
+    }
+    if (!backgroundEnabled) {
+      return null;
+    }
+
     for (const record of allFiles) {
-      if (record.raid === activeRaid) continue;
+      if (record.raid === activeRaid) {
+        continue;
+      }
       const state = fileStateByPath.get(record.path);
-      if (!state) continue;
-      if (state.status === "loaded" || state.status === "failed") continue;
-      if (state.status === "loading") continue;
+      if (!isLoadableState(state)) {
+        continue;
+      }
       return record;
     }
     return null;
   }
 
-  async function ensurePriorityLoad(record) {
-    const state = fileStateByPath.get(record.path);
-    if (!state) return;
-    if (state.status === "loaded" || state.status === "failed") return;
-    if (state.promise) {
-      await state.promise;
-      return;
+  function getNextRecordForRaid(raid) {
+    if (!raid) return null;
+    const files = filesByRaid.get(raid) || [];
+    for (const record of files) {
+      const state = fileStateByPath.get(record.path);
+      if (!isLoadableState(state)) {
+        continue;
+      }
+      return record;
     }
-
-    state.attempts += 1;
-    state.status = "loading";
-    state.error = null;
-    state.promise = loadFile(record)
-      .then((rows) => {
-        state.status = "loaded";
-        state.promise = null;
-        onFileLoaded(record, rows);
-      })
-      .catch(async (error) => {
-        state.promise = null;
-        state.error = error;
-        if (state.attempts < 2) {
-          state.status = "queued";
-          await ensurePriorityLoad(record);
-          return;
-        }
-        state.status = "failed";
-        onFileFailed(record, error);
-      });
-
-    await state.promise;
+    return null;
   }
 
-  async function ensureBackgroundLoad(record) {
-    const state = fileStateByPath.get(record.path);
-    if (!state) return;
-    if (state.status === "loaded" || state.status === "failed") return;
-    if (state.promise) {
-      await state.promise;
-      return;
-    }
+  function isLoadableState(state) {
+    if (!state) return false;
+    if (state.status === "loaded" || state.status === "failed") return false;
+    if (state.status === "loading") return false;
+    return true;
+  }
 
+  function startLoad(record) {
+    const state = fileStateByPath.get(record.path);
+    if (!state || state.promise || !isLoadableState(state)) return;
+
+    inFlight += 1;
     state.attempts += 1;
     state.status = "loading";
     state.error = null;
@@ -166,9 +154,48 @@ export function createRaidLoadScheduler(config) {
         }
         state.status = "failed";
         onFileFailed(record, error);
+      })
+      .finally(() => {
+        inFlight = Math.max(0, inFlight - 1);
+        notifyRaidWaiters(record.raid);
+        pumpQueue();
       });
+  }
 
-    await state.promise;
+  function waitForRaidTerminal(raid) {
+    if (isRaidTerminal(raid)) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const waiters = raidWaiters.get(raid) || [];
+      waiters.push(resolve);
+      raidWaiters.set(raid, waiters);
+    });
+  }
+
+  function isRaidTerminal(raid) {
+    const files = filesByRaid.get(raid) || [];
+    if (files.length === 0) {
+      return true;
+    }
+
+    return files.every((record) => {
+      const state = fileStateByPath.get(record.path);
+      return state?.status === "loaded" || state?.status === "failed";
+    });
+  }
+
+  function notifyRaidWaiters(raid) {
+    if (!isRaidTerminal(raid)) {
+      return;
+    }
+    const waiters = raidWaiters.get(raid);
+    if (!waiters?.length) {
+      return;
+    }
+    raidWaiters.delete(raid);
+    waiters.forEach((resolve) => resolve());
   }
 
   return {

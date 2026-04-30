@@ -95,6 +95,9 @@ function createClassList() {
         this.values.add(cls);
       }
     },
+    contains(cls) {
+      return this.values.has(cls);
+    },
   };
 }
 
@@ -342,4 +345,40 @@ test("setupHeaderBindings keeps titles synced after raid rebroadcast", () => {
   filterState.selectedBoss = originalBoss;
   filterState.listeners = originalListeners;
   __setBossIndexCacheForTests(previousCache);
+});
+
+test("setupHeaderBindings keeps the raid selector interactive before boss data exists", () => {
+  const raidSelect = createInteractiveSelect("raid-select", [
+    "AAC Heavyweight",
+    "AAC Cruiserweight",
+  ]);
+  const bossSelect = createInteractiveSelect("boss-select");
+  bossSelect.options = [];
+  bossSelect.value = "";
+  bossSelect.selectedIndex = -1;
+
+  const nodes = {
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "raid-title": createTitleElement("raid-title"),
+    "boss-subheader": createTitleElement("boss-subheader"),
+    "raid-dropdown": createDropdownElement("raid-dropdown"),
+    "boss-dropdown": createDropdownElement("boss-dropdown"),
+  };
+
+  withDomAndUrl("http://localhost:8080/", nodes, () => {
+    setupHeaderBindings();
+
+    assert.equal(nodes["raid-title"].textContent, "AAC Heavyweight");
+    assert.equal(
+      nodes["raid-title"].classList.contains("non-interactive"),
+      false,
+      "raid selector should stay interactive when manifest-derived raid choices exist"
+    );
+    assert.equal(
+      nodes["boss-subheader"].classList.contains("non-interactive"),
+      true,
+      "boss selector should remain non-interactive until row data populates boss choices"
+    );
+  });
 });
