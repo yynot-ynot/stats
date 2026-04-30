@@ -1,22 +1,27 @@
 import { setModuleLogLevel, envLogLevel } from "../shared/logging/logger.js";
 
-// Configure logging levels for individual modules (debug locally, quieter in prod)
-const uiModuleLogLevel = envLogLevel("debug", "warn");
-const mainLogLevel = envLogLevel("debug", "info");
+// Configure logging levels for individual modules. Local runs should stay
+// readable, so milestone logs default to info while deeper diagnostics remain
+// available through targeted debug statements.
+const uiModuleLogLevel = envLogLevel("warn", "warn");
+const filterControlsLogLevel = envLogLevel("info", "warn");
+const mainLogLevel = envLogLevel("info", "info");
 const chartRendererLogLevel = envLogLevel("info", "warn");
 const filterStateLogLevel = envLogLevel("info", "warn");
 const dataDisplayLogLevel = envLogLevel("info", "warn");
 const fetchersLogLevel = envLogLevel("info", "warn");
 const dpsTypeSidebarManagerLogLevel = envLogLevel("info", "warn");
+const raidLoadSchedulerLogLevel = envLogLevel("info", "warn");
 
 setModuleLogLevel("main", mainLogLevel);
 setModuleLogLevel("filterState", filterStateLogLevel);
 setModuleLogLevel("fetchers", fetchersLogLevel);
 setModuleLogLevel("chartRenderer", chartRendererLogLevel);
 setModuleLogLevel("dataDisplay", dataDisplayLogLevel);
-setModuleLogLevel("filterControls", uiModuleLogLevel);
+setModuleLogLevel("filterControls", filterControlsLogLevel);
 setModuleLogLevel("dpsTypeSidebarManager", dpsTypeSidebarManagerLogLevel);
 setModuleLogLevel("jobSidebarManager", uiModuleLogLevel);
+setModuleLogLevel("raidLoadScheduler", raidLoadSchedulerLogLevel);
 
 // Path to the manifest file listing JSON assets
 export const FILE_MANIFEST_PATH = "js/config/file_manifest.json";

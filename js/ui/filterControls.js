@@ -184,7 +184,14 @@ export function populateDropdown(selectElement, valueSet, label, options = {}) {
 
   // Attach centralized update handler on change (guard to avoid stacking duplicates on re-population)
   if (!selectElement.__filterControlsChangeHandler) {
-    const handler = () => pushCurrentSelection();
+    const handler = () => {
+      if (selectElement.id === "raid-select") {
+        logger.info(
+          `[ui-active] select change observed for raid-select: value="${selectElement.value}"`
+        );
+      }
+      pushCurrentSelection();
+    };
     selectElement.addEventListener("change", handler);
     selectElement.__filterControlsChangeHandler = handler;
   }
@@ -320,6 +327,11 @@ function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
     item.textContent = opt.value;
     item.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (selectEl.id === "raid-select") {
+        logger.info(
+          `[ui-active] custom dropdown selection for raid-select: "${selectEl.value || ""}" -> "${opt.value}"`
+        );
+      }
       titleEl.textContent = opt.value;
       selectEl.value = opt.value;
       dropdownEl.classList.add("hidden-dropdown");

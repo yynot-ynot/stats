@@ -75,6 +75,9 @@ export function getLoadingState() {
 export async function init() {
   initViewState();
   const initialFiltersFromUrl = parseFilterStateFromUrl();
+  logger.info(
+    `Initial URL filter intent: raid="${initialFiltersFromUrl.selectedRaid || ""}", boss="${initialFiltersFromUrl.selectedBoss || ""}", metric="${initialFiltersFromUrl.selectedDpsType || ""}", pct="${initialFiltersFromUrl.selectedPercentile ?? ""}"`
+  );
   isLoading = true;
   syncActiveRaidLoadingIndicator(true);
   const start = performance.now();
@@ -102,7 +105,7 @@ export async function init() {
       },
     });
     const t2 = performance.now();
-    logger.debug(
+    logger.info(
       `Discovered ${files.length} files to load. (in ${(t2 - t1).toFixed(1)}ms)`
     );
 
@@ -110,9 +113,13 @@ export async function init() {
       manifestIndex,
       initialFiltersFromUrl.selectedRaid
     );
+    logger.info(
+      `[ui-active] resolved startup raid "${effectiveRaid}" from URL raid "${initialFiltersFromUrl.selectedRaid || ""}"`
+    );
     primeManifestRaidSelection(effectiveRaid);
     ensureRaidChangeListener();
     await requestRaidActivation(effectiveRaid, {
+      source: "startup",
       applyUrlFilters: true,
       urlFilters: initialFiltersFromUrl,
     });
@@ -132,7 +139,7 @@ export async function init() {
   }
 
   const end = performance.now();
-  logger.debug(`Total init() duration: ${(end - start).toFixed(1)}ms`);
+  logger.info(`Total init() duration: ${(end - start).toFixed(1)}ms`);
 }
 
 /**
@@ -143,15 +150,17 @@ export async function init() {
  *
  * @param {string} raid
  * @param {Object} options
+ * @param {string} [options.source="unknown"]
  * @param {boolean} [options.applyUrlFilters=false]
  * @param {Object} [options.urlFilters]
  */
 async function activateRaid(raid, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
 
-  const { applyUrlFilters = false, urlFilters = null } = options;
+  const { source = "unknown", applyUrlFilters = false, urlFilters = null } = options;
   processingRaid = raid;
   try {
+    logger.info(`[ui-active] begin activation for raid "${raid}" (source=${source})`);
     isLoading = true;
     syncActiveRaidLoadingIndicator(true, raid);
     raidLoadScheduler.setActiveRaid(raid);
@@ -166,17 +175,21 @@ async function activateRaid(raid, options = {}) {
     ]);
     supersedeWaiter.cancel();
     if (activationOutcome === "superseded") {
+      logger.info(`[ui-active] activation for raid "${raid}" superseded by a newer request`);
       return;
     }
     if (requestedRaid && requestedRaid !== raid) {
+      logger.info(
+        `[ui-active] activation for raid "${raid}" skipped because "${requestedRaid}" is now pending`
+      );
       return;
     }
 
     activeRaid = raid;
     const activeRaidRows = raidDataStore.getRaidRows(raid);
     const tRaidLoadEnd = performance.now();
-    logger.debug(
-      `Activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
+    logger.info(
+      `[ui-active] activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
     );
 
     setupDataDisplayManager(activeRaidRows);
@@ -209,6 +222,10 @@ async function activateRaid(raid, options = {}) {
     syncLoadFailureMessage();
     isLoading = false;
     syncActiveRaidLoadingIndicator(false, raid);
+    logger.info(
+      `[ui-active] UI activation complete for raid "${raid}" (source=${source}, rows=${activeRaidRows.length}, bosses=${new Set(activeRaidRows.map((row) => row.boss).filter(Boolean)).size})`
+    );
+    logDisplayedRaidBossState();
   } finally {
     if (processingRaid === raid) {
       processingRaid = "";
@@ -230,12 +247,16 @@ function requestRaidActivation(raid, options = {}) {
     return Promise.resolve();
   }
   if (activationInFlightPromise && raid === processingRaid) {
+    logger.debug(`Ignoring duplicate activation request for in-flight raid "${raid}"`);
     return activationInFlightPromise;
   }
 
   requestedRaid = raid;
   requestedRaidOptions = options;
   raidRequestVersion += 1;
+  logger.info(
+    `[ui-active] queued activation request for raid "${raid}" (requestVersion=${raidRequestVersion}, source=${options.source || "unknown"})`
+  );
   isLoading = true;
   syncActiveRaidLoadingIndicator(true, raid);
   raidLoadScheduler.setActiveRaid(raid);
@@ -394,8 +415,8 @@ function logDisplayedRaidBossState() {
   const displayedRaid = raidTitleEl?.textContent?.trim() || "[None]";
   const displayedBoss = bossTitleEl?.textContent?.trim() || "[None]";
   const { selectedRaid = "", selectedBoss = "" } = getCurrentFilterState();
-  logger.debug(
-    `Displayed raid: "${displayedRaid}" (filter: "${
+  logger.info(
+    `[ui-active] displayed raid: "${displayedRaid}" (filter: "${
       selectedRaid || ""
     }") | Displayed boss: "${displayedBoss}" (filter: "${selectedBoss || ""}")`
   );
@@ -410,12 +431,18 @@ function ensureRaidChangeListener() {
     if (!nextRaid) {
       return;
     }
+    if (change.previousValue === nextRaid) {
+      return;
+    }
     if (nextRaid === activeRaid && !activationInFlightPromise) {
       return;
     }
 
+    logger.info(
+      `[ui-active] observed selectedRaid change in filter state: previous="${change.previousValue || ""}" next="${nextRaid}"`
+    );
     updateFilterValue("selectedJobs", new Set());
-    requestRaidActivation(nextRaid)
+    requestRaidActivation(nextRaid, { source: "filter-state:selectedRaid" })
       .then(() => {
         if (filterUrlSyncStarted) {
           broadcastCurrentFilters();
@@ -439,6 +466,9 @@ function primeManifestRaidSelection(effectiveRaid) {
     preferredValue: effectiveRaid,
   });
   populateDropdown(bossSelect, new Set(), "Boss");
+  logger.info(
+    `[ui-active] primed manifest-driven raid selector with ${manifestIndex.sortedRaids.length} raid option(s); preferred raid="${effectiveRaid}"`
+  );
 
   if (!chromeInitialized) {
     setupHeaderBindings();
