@@ -15,6 +15,8 @@ export const filterState = {
   selectedJobs: new Set(),
   selectedPercentileDate: "",
   showMaxPercentile: false,
+  // Defaults to linear rendering until the user explicitly opts into signed-log scaling.
+  parseDeltaScale: "original",
   listeners: new Set(),
 };
 

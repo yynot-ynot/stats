@@ -81,9 +81,40 @@
   <div id="comparison-message" data-view="trend" class="view-hidden"></div>
 
   <!-- ================================
+       Parse Delta Scale Toggle
+       Kept outside the Plotly container so the control can persist across chart redraws.
+       ================================ -->
+  <!-- ================================
        Parse Trend Charts
        ================================ -->
   <div id="parse-total-plot-container" data-view="trend" class="view-hidden"></div>
+  <div
+    id="parse-delta-scale-container"
+    data-view="trend"
+    class="parse-scale-control view-hidden"
+  >
+    <span class="parse-scale-control-label">Chart scale</span>
+    <div class="parse-scale-toggle" role="group" aria-label="Chart scale">
+      <button
+        type="button"
+        id="parse-delta-scale-linear"
+        class="parse-scale-toggle-btn"
+        data-scale-value="original"
+        aria-pressed="true"
+      >
+        Linear
+      </button>
+      <button
+        type="button"
+        id="parse-delta-scale-log"
+        class="parse-scale-toggle-btn"
+        data-scale-value="signed-log"
+        aria-pressed="false"
+      >
+        Log
+      </button>
+    </div>
+  </div>
   <div id="parse-delta-plot-container" data-view="trend" class="view-hidden"></div>
 
   <!-- ================================

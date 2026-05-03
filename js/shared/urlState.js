@@ -12,6 +12,8 @@ const PARAM_CONFIG = {
   selectedComparisonPercentiles: { param: "comp", type: "setNumber" },
   selectedJobs: { param: "jobs", type: "setString" },
   selectedPercentileDate: { param: "pdate", type: "string" },
+  // Only persist the non-default scale so the URL stays stable in normal linear mode.
+  parseDeltaScale: { param: "pdscale", type: "string", defaultValue: "original" },
 };
 
 let syncInitialized = false;
@@ -65,7 +67,11 @@ function updateUrlWithFilters(state) {
     let changed = false;
     Object.entries(PARAM_CONFIG).forEach(([key, config]) => {
       const encoded = encodeValue(config.type, state[key]);
-      if (encoded === null) {
+      const shouldOmit =
+        encoded === null ||
+        (Object.hasOwn(config, "defaultValue") &&
+          state[key] === config.defaultValue);
+      if (shouldOmit) {
         if (url.searchParams.has(config.param)) {
           url.searchParams.delete(config.param);
           changed = true;

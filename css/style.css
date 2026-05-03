@@ -158,6 +158,69 @@ body {
   text-align: center;
 }
 
+.parse-scale-control {
+  /* Offset the control toward the plotted area instead of the page edge. */
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 78px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: flex-start;
+}
+
+.parse-scale-control-label {
+  color: #9ec6ff;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.parse-scale-toggle {
+  /* Segmented-button shell for the linear/log scale chooser. */
+  display: inline-flex;
+  border: 1px solid #2d3a44;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1b2025;
+}
+
+.parse-scale-toggle-btn {
+  min-width: 84px;
+  padding: 0.35rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: #c7d7ff;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.parse-scale-toggle-btn + .parse-scale-toggle-btn {
+  border-left: 1px solid #2d3a44;
+}
+
+.parse-scale-toggle-btn[aria-pressed="true"] {
+  background: #0f3c63;
+  color: #fff;
+}
+
+.parse-scale-toggle-btn[aria-pressed="false"]:hover {
+  background: #2a3137;
+}
+
+.parse-scale-toggle-btn:focus-visible {
+  outline: 2px solid #7cc7ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 720px) {
+  .parse-scale-control {
+    /* On narrow layouts, keep the control aligned with the content edge. */
+    padding-left: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .active-raid-loading {
   margin: 1rem 0 1.5rem;
   padding: 1.4rem 1.5rem 1.3rem;

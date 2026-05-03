@@ -14,12 +14,15 @@ const BASE_CHART_MARGINS = Object.freeze({
   t: 60,
   l: 50,
   r: 65,
-  b: 90,
+  // Reserve a distinct bottom lane for the year annotation under the day/week ticks.
+  b: 140,
 });
 // Offset applied to the single-year annotation so it visually centers with the plot
 // once the y-axis title and left margin push the plotting area right.
 const SINGLE_YEAR_ANNOTATION_SHIFT =
   (BASE_CHART_MARGINS.l - BASE_CHART_MARGINS.r) / 2;
+// Position the year below the x-axis tick labels but still inside Plotly's bottom margin.
+const YEAR_ANNOTATION_Y = -0.33;
 const MONTH_NAMES = Object.freeze([
   "Jan",
   "Feb",
@@ -442,10 +445,6 @@ function generateYearAnnotations(sortedDates, sortedDateLabels, options = {}) {
 
   const totalYears = Object.keys(yearToIndices).length;
 
-  // Set y position lower, so the annotation appears below axis tick labels, but closer to the "Date" axis label.
-  // Experimentally, -0.15 aligns better with axis labels without overlapping tick labels.
-  const yearAnnotationY = -0.15;
-
   if (totalYears === 1) {
     // Single-year: align the year label to the center of the full axis, close to the "Date" axis label
     return [
@@ -453,7 +452,7 @@ function generateYearAnnotations(sortedDates, sortedDateLabels, options = {}) {
         xref: "paper",
         yref: "paper",
         x: 0.5,
-        y: yearAnnotationY,
+        y: YEAR_ANNOTATION_Y,
         text: `<b>${Object.keys(yearToIndices)[0]}</b>`,
         showarrow: false,
         font: { size: 14 },
@@ -478,7 +477,7 @@ function generateYearAnnotations(sortedDates, sortedDateLabels, options = {}) {
       xref: "x",
       yref: "paper",
       x: sortedDateLabels[posIndex],
-      y: yearAnnotationY,
+      y: YEAR_ANNOTATION_Y,
       text: `<b>${year}</b>`,
       showarrow: false,
       font: { size: 14 },
@@ -691,12 +690,14 @@ export function buildParseTrendSeries(rows) {
  * @param {Object} params.filters - Filter snapshot (raid, boss, percentile, dps_type, jobNames).
  * @param {HTMLElement|null} params.totalContainer - DOM node for the total parses chart.
  * @param {HTMLElement|null} params.deltaContainer - DOM node for the delta chart.
+ * @param {string} [params.deltaScale="original"] - Visual scale mode for the delta chart.
  */
 export function renderParseTrendCharts({
   data,
   filters,
   totalContainer,
   deltaContainer,
+  deltaScale = "original",
 }) {
   const prepStart = performance.now();
   if (!totalContainer || !deltaContainer) return Promise.resolve();
@@ -719,6 +720,9 @@ export function renderParseTrendCharts({
 
   const totalTraces = [];
   const deltaTraces = [];
+  // Build the raw delta list once so the optional signed-log axis can derive
+  // stable tick positions from the true values rather than transformed ones.
+  const deltaValues = [];
   jobSeries.forEach((series, jobName) => {
     const jobLabel = getDisplayLabelForJob(jobName);
     const color = getJobColor(jobName);
@@ -751,7 +755,13 @@ export function renderParseTrendCharts({
       mode: "lines+markers",
       name: jobLabel,
       x: dateLabels,
-      y: series.deltas,
+      y: series.deltas.map((value) => {
+        if (value === null) return null;
+        deltaValues.push(value);
+        return deltaScale === "signed-log"
+          ? transformSignedLogValue(value)
+          : value;
+      }),
       customdata: isoDates.map((snapshotIso, index) => [
         effectiveIsoDates[index],
         snapshotIso,
@@ -759,6 +769,7 @@ export function renderParseTrendCharts({
         series.totals[index],
         series.previousTotals[index],
         series.previousIsoDates[index] ?? "—",
+        series.deltas[index],
       ]),
       line: { color },
       marker: { color },
@@ -771,7 +782,7 @@ export function renderParseTrendCharts({
         '<br><span style="color:#9adece;">FFLogs Snapshot Date</span>: %{customdata[1]}' +
         '<br><span style="color:#9adece;">Current Parses</span>: %{customdata[3]:,}' +
         '<br><span style="color:#9adece;">Previous Parses</span>: %{customdata[4]:,} (%{customdata[5]})' +
-        '<br><span style="color:#9adece;">Change</span>: %{y:,}<extra></extra>',
+        '<br><span style="color:#9adece;">Change</span>: %{customdata[6]:,}<extra></extra>',
     };
     deltaTraces.push(deltaTrace);
   });
@@ -824,6 +835,8 @@ export function renderParseTrendCharts({
     }
   );
   const deltaPlotStart = performance.now();
+  const deltaAxisConfig =
+    deltaScale === "signed-log" ? buildSignedLogAxisConfig(deltaValues) : null;
   const deltaPromise = plotChartWithLayout(
     deltaTraces,
     deltaContainer,
@@ -833,7 +846,11 @@ export function renderParseTrendCharts({
     "Parse Count Change",
     true,
     false,
-    { compactDates: effectiveCompactDates, weekAnchor }
+    {
+      compactDates: effectiveCompactDates,
+      weekAnchor,
+      yAxisConfig: deltaAxisConfig,
+    }
   );
   logTrendChartTiming({
     chartTitle: "Change in Parse Count",
@@ -1409,7 +1426,11 @@ function plotChartWithLayout(
   showLegend = false,
   options = {}
 ) {
-  const { compactDates = null, weekAnchor = null } = options;
+  const {
+    compactDates = null,
+    weekAnchor = null,
+    yAxisConfig = null,
+  } = options;
   const { tickvals, ticktext } = buildWeekTickConfig(
     sortedDateLabels,
     compactDates,
@@ -1443,6 +1464,7 @@ function plotChartWithLayout(
       automargin: true, // allow Plotly to honor axis title standoff without moving the axis
       fixedrange: fixedRange,
       gridcolor: "#444444", // Medium-dark grid lines
+      ...(yAxisConfig ?? {}),
     },
     margin: layoutMargin,
     annotations,
@@ -1456,6 +1478,94 @@ function plotChartWithLayout(
     hoverlabel: createHoverLabelTheme(),
   };
   return Plotly.newPlot(container, traces, layout, { responsive: true });
+}
+
+/**
+ * Map signed deltas into a log-like domain while preserving zero and direction.
+ * This keeps large gains/losses readable without dropping negative values.
+ * @param {number} value
+ * @returns {number|null}
+ */
+function transformSignedLogValue(value) {
+  if (!Number.isFinite(value) || value === 0) {
+    return value === 0 ? 0 : null;
+  }
+  return Math.sign(value) * Math.log10(Math.abs(value) + 1);
+}
+
+/**
+ * Format signed-log tick labels using the original untransformed values.
+ * @param {number} value
+ * @returns {string}
+ */
+function formatSignedLogTickLabel(value) {
+  if (value === 0) return "0";
+  return value.toLocaleString("en-US");
+}
+
+/**
+ * Build Plotly y-axis tick settings for the signed-log delta view.
+ * The center intentionally shows only 0 so the toggle does not create a
+ * crowded `-1 / 0 / 1` label cluster near the origin.
+ * @param {number[]} values
+ * @returns {{tickmode: string, tickvals: number[], ticktext: string[]}|null}
+ */
+function buildSignedLogAxisConfig(values) {
+  const numericValues = values.filter((value) => Number.isFinite(value));
+  if (numericValues.length === 0) {
+    return null;
+  }
+
+  const maxAbs = Math.max(...numericValues.map((value) => Math.abs(value)));
+  if (maxAbs === 0) {
+    return {
+      tickmode: "array",
+      tickvals: [0],
+      ticktext: ["0"],
+    };
+  }
+
+  const magnitudes = [];
+  for (let magnitude = 1; magnitude <= maxAbs; magnitude *= 10) {
+    if (magnitude !== 1) {
+      magnitudes.push(magnitude);
+    }
+  }
+  if (magnitudes[magnitudes.length - 1] !== maxAbs) {
+    magnitudes.push(maxAbs);
+  }
+
+  const rawTicks = new Set([0]);
+  magnitudes.forEach((magnitude) => {
+    if (numericValues.some((value) => value <= -magnitude)) rawTicks.add(-magnitude);
+    if (numericValues.some((value) => value >= magnitude)) rawTicks.add(magnitude);
+  });
+
+  const sortedRawTicks = Array.from(rawTicks).sort((a, b) => a - b);
+  return {
+    tickmode: "array",
+    tickvals: sortedRawTicks.map((value) => transformSignedLogValue(value)),
+    ticktext: sortedRawTicks.map((value) => formatSignedLogTickLabel(value)),
+  };
+}
+
+/**
+ * Test helper exposing the signed-log transform without forcing tests to
+ * duplicate the implementation details inline.
+ * @param {number} value
+ * @returns {number|null}
+ */
+export function __transformSignedLogValueForTests(value) {
+  return transformSignedLogValue(value);
+}
+
+/**
+ * Test helper exposing the signed-log axis tick builder.
+ * @param {number[]} values
+ * @returns {{tickmode: string, tickvals: number[], ticktext: string[]}|null}
+ */
+export function __buildSignedLogAxisConfigForTests(values) {
+  return buildSignedLogAxisConfig(values);
 }
 
 /**

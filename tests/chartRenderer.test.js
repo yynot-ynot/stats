@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   applyFilters,
   buildParseTrendSeries,
+  __buildSignedLogAxisConfigForTests,
   __buildWeekTickConfigForTests,
   __getChartDatePresentationForTests,
+  __transformSignedLogValueForTests,
 } from "../js/ui/chartRenderer.js";
 
 /**
@@ -166,6 +168,27 @@ test("buildParseTrendSeries derives per-job deltas relative to the last report",
   assert.deepEqual(dkSeries.previousTotals, [null, 120, 120, 60]);
   assert.deepEqual(monkSeries.deltas, [null, null, null, 40]);
   assert.deepEqual(monkSeries.previousTotals, [null, null, null, 40]);
+});
+
+test("signed log transform preserves sign and keeps zero centered", () => {
+  assert.equal(__transformSignedLogValueForTests(null), null);
+  assert.equal(__transformSignedLogValueForTests(0), 0);
+  assert.equal(__transformSignedLogValueForTests(99), 2);
+  assert.equal(__transformSignedLogValueForTests(-99), -2);
+});
+
+test("signed log axis config emits readable negative, zero, and positive ticks", () => {
+  // The axis intentionally skips +/-1 near the origin to avoid a crowded center label cluster.
+  const axis = __buildSignedLogAxisConfigForTests([-60, 0, 40, 1200]);
+  assert.deepEqual(axis.ticktext, ["-10", "0", "10", "100", "1,000", "1,200"]);
+  assert.deepEqual(axis.tickvals, [
+    __transformSignedLogValueForTests(-10),
+    __transformSignedLogValueForTests(0),
+    __transformSignedLogValueForTests(10),
+    __transformSignedLogValueForTests(100),
+    __transformSignedLogValueForTests(1000),
+    __transformSignedLogValueForTests(1200),
+  ]);
 });
 
 test("chart date presentation shifts snapshot dates back one day for display", () => {

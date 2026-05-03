@@ -40,6 +40,8 @@ export const ALL_FILTER_KEYS = [
   "selectedJobs",
   "selectedPercentileDate",
   "showMaxPercentile",
+  // Controls only the parse-delta chart's visual scale toggle.
+  "parseDeltaScale",
 ];
 
 // Default values for each dropdown (empty string means no default)

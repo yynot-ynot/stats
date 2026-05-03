@@ -36,6 +36,10 @@ import {
   setReferencePercentileSliderValue,
   setComparisonSliderValues,
 } from "../ui/percentileSliderControls.js";
+import {
+  setupParseScaleControl,
+  setParseScaleControlValue,
+} from "../ui/parseScaleControl.js";
 import { setupViewSwitcher } from "../ui/viewSwitcher.js";
 
 import { setupDataDisplayManager } from "./dataDisplayManager.js";
@@ -74,6 +78,9 @@ export function getLoadingState() {
  */
 export async function init() {
   initViewState();
+  // Initialize the standalone parse-scale toggle before URL hydration so it can
+  // accept startup state like the other filter controls.
+  setupParseScaleControl();
   const initialFiltersFromUrl = parseFilterStateFromUrl();
   logger.info(
     `Initial URL filter intent: raid="${initialFiltersFromUrl.selectedRaid || ""}", boss="${initialFiltersFromUrl.selectedBoss || ""}", metric="${initialFiltersFromUrl.selectedDpsType || ""}", pct="${initialFiltersFromUrl.selectedPercentile ?? ""}"`
@@ -339,6 +346,10 @@ function applyInitialFiltersFromUrl(filters) {
   if (filters.selectedDpsType) {
     setSelectValueById("dps-type-select", filters.selectedDpsType);
   }
+  // Hydrate the parse-delta scale alongside the standard trend filters.
+  if (filters.parseDeltaScale) {
+    setParseScaleControlValue(filters.parseDeltaScale);
+  }
   if (isNumberValue(filters.selectedPercentile)) {
     setPercentileSliderValue(filters.selectedPercentile);
   }
@@ -498,6 +509,9 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
   const indicatorEl = getOrCreateActiveRaidLoadingElement();
   if (!indicatorEl) return;
   const trendPlaceholder = document.getElementById("trend-view-placeholder");
+  const parseScaleContainer = document.getElementById(
+    "parse-delta-scale-container"
+  );
 
   if (!isVisible) {
     indicatorEl.classList.add("view-hidden");
@@ -512,6 +526,12 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
       }
     }
     return;
+  }
+
+  if (parseScaleContainer) {
+    // Hide the scale toggle while a raid is loading so stale controls do not
+    // float above an empty or superseded chart area.
+    parseScaleContainer.classList.add("view-hidden");
   }
 
   if (trendPlaceholder && !("preLoadDisplay" in trendPlaceholder.dataset)) {

@@ -45,24 +45,24 @@ export function setupDataDisplayManager(allData) {
   setupPercentileDateSlider(getAvailablePercentileDates(globalData, latestState));
 
   if (initialized) {
-    handleStateChangeForActiveView(latestState);
+    handleStateChangeForActiveView(latestState, null);
     return;
   }
 
   initialized = true;
 
   // Subscribe to all filter state changes
-  subscribeToFilterChanges(() => {
+  subscribeToFilterChanges((_, change) => {
     const state = getCurrentFilterState();
     latestState = state;
     setupPercentileDateSlider(getAvailablePercentileDates(globalData, state));
-    handleStateChangeForActiveView(state);
+    handleStateChangeForActiveView(state, change);
   });
 
   subscribeToViewChanges((view) => {
     if (view === activeView) return;
     activeView = view;
-    handleStateChangeForActiveView(latestState);
+    handleStateChangeForActiveView(latestState, null);
   });
 
   logger.debug(
@@ -75,14 +75,22 @@ export function setupDataDisplayManager(allData) {
  * Trend view continues to render the legacy charts/comparisons; Percentile view currently
  * shows the filter-state placeholder until the new charts are built.
  * @param {Object} state
+ * @param {Object|null} change
  */
-function handleStateChangeForActiveView(state) {
+function handleStateChangeForActiveView(state, change = null) {
   if (!state) return;
   if (activeView === "trend") {
-    toggleTrendViewVisibility(hasAnyJobSelection(state.selectedJobs));
+    // Scale-only rerenders should not unmount the toggle, otherwise the page
+    // jumps vertically while Plotly redraws the delta chart.
+    const preserveParseScaleVisibility = change?.key === "parseDeltaScale";
+    toggleTrendViewVisibility(hasAnyJobSelection(state.selectedJobs), {
+      preserveParseScaleVisibility,
+    });
     if (areRequiredFiltersSelected(state)) {
       logger.debug("Required filters selected. Rendering full chart.");
-      updateChart(state);
+      updateChart(state, {
+        keepParseScaleVisible: preserveParseScaleVisibility,
+      });
     } else {
       logger.debug(
         "Filter change detected but required filters not fully selected."
@@ -128,14 +136,18 @@ function hasAnyJobSelection(selectedJobs) {
  * - For DPS: plots selected jobs as is.
  * - For HPS: flattens paired healer selection into individual healers for plotting.
  * @param {Object} state - Current filter state snapshot.
+ * @param {Object} [options]
+ * @param {boolean} [options.keepParseScaleVisible=false] - Preserve the scale toggle during scale-only rerenders.
  */
-function updateChart(state) {
+function updateChart(state, options = {}) {
+  const { keepParseScaleVisible = false } = options;
   const {
     selectedRaid,
     selectedBoss,
     selectedPercentile,
     selectedDpsType,
     selectedJobs,
+    parseDeltaScale,
   } = state;
 
   const baseFilters = {
@@ -166,10 +178,19 @@ function updateChart(state) {
   const parseDeltaContainer = document.getElementById(
     "parse-delta-plot-container"
   );
+  const parseScaleContainer = document.getElementById(
+    "parse-delta-scale-container"
+  );
   const dpsSurface = getChartRenderSurface(dpsContainer, "main");
   const healingSurface = getChartRenderSurface(healingContainer, "main");
   const parseTotalSurface = getChartRenderSurface(parseTotalContainer, "main");
   const parseDeltaSurface = getChartRenderSurface(parseDeltaContainer, "main");
+
+  if (parseScaleContainer && !keepParseScaleVisible) {
+    // Initial renders and raid changes keep the control hidden until the
+    // underlying parse charts have actually been redrawn.
+    parseScaleContainer.classList.add("view-hidden");
+  }
 
   logger.debug("Updating chart with filters:");
   logger.debug(`DPS Filters: ${JSON.stringify(dpsFilters)}`);
@@ -204,6 +225,7 @@ function updateChart(state) {
           filters: dpsFilters,
           totalContainer: parseTotalSurface,
           deltaContainer: parseDeltaSurface,
+          deltaScale: parseDeltaScale,
         }),
       ].filter((promise) => promise && typeof promise.then === "function");
 
@@ -213,6 +235,9 @@ function updateChart(state) {
         })
         .finally(() => {
           if (renderCycle === trendRenderCycle) {
+            if (parseScaleContainer) {
+              parseScaleContainer.classList.remove("view-hidden");
+            }
             hideTrendRenderStatus();
           }
         });
@@ -498,20 +523,30 @@ function formatSet(value) {
  * Hides all trend-only DOM nodes and surfaces a placeholder prompt when no jobs are selected,
  * ensuring the initial load guides the user to pick jobs before interacting with sliders.
  * @param {boolean} hasJobSelection
+ * @param {Object} [options]
+ * @param {boolean} [options.preserveParseScaleVisibility=false] - Skip hiding the parse-scale toggle during scale-only rerenders.
  */
-export function toggleTrendViewVisibility(hasJobSelection) {
+export function toggleTrendViewVisibility(hasJobSelection, options = {}) {
+  const { preserveParseScaleVisibility = false } = options;
   const placeholder = document.getElementById("trend-view-placeholder");
+  const parseScaleContainer = document.getElementById(
+    "parse-delta-scale-container"
+  );
   const targets = TREND_VIEW_SECTION_IDS.map((id) =>
     document.getElementById(id)
   ).filter(Boolean);
 
   if (hasJobSelection) {
     targets.forEach((node) => node.classList.remove("view-hidden"));
+    if (parseScaleContainer && !preserveParseScaleVisibility) {
+      parseScaleContainer.classList.add("view-hidden");
+    }
     if (placeholder) placeholder.style.display = "none";
   } else {
     trendRenderCycle += 1;
     hideTrendRenderStatus();
     targets.forEach((node) => node.classList.add("view-hidden"));
+    if (parseScaleContainer) parseScaleContainer.classList.add("view-hidden");
     if (placeholder) {
       placeholder.textContent = JOB_SELECTION_PROMPT;
       placeholder.style.display = "";

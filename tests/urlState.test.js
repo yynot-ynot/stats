@@ -29,7 +29,7 @@ function withWindow(locationHref, fn) {
 
 test("parseFilterStateFromUrl decodes primitives and sets", () => {
   withWindow(
-    "https://example.com/stats?view=trend&raid=Eden&boss=Leviathan&pct=95&metric=rdps&refpct=50&comp=10,90&jobs=Warrior,Sage&pdate=20240201",
+    "https://example.com/stats?view=trend&raid=Eden&boss=Leviathan&pct=95&metric=rdps&refpct=50&comp=10,90&jobs=Warrior,Sage&pdate=20240201&pdscale=signed-log",
     () => {
       const snapshot = parseFilterStateFromUrl();
       assert.deepEqual(snapshot.selectedRaid, "Eden");
@@ -48,6 +48,7 @@ test("parseFilterStateFromUrl decodes primitives and sets", () => {
         ["Sage", "Warrior"]
       );
       assert.equal(snapshot.selectedPercentileDate, "20240201");
+      assert.equal(snapshot.parseDeltaScale, "signed-log");
     }
   );
 });
@@ -69,6 +70,7 @@ test("startFilterUrlSync mirrors filter changes into the query string", async ()
       selectedJobs: new Set(["Warrior", "Sage"]),
       selectedDpsType: "rdps",
       selectedPercentileDate: "20240201",
+      parseDeltaScale: "signed-log",
     };
 
     listeners[0](mockState);
@@ -84,12 +86,13 @@ test("startFilterUrlSync mirrors filter changes into the query string", async ()
     assert.equal(parsed.searchParams.get("comp"), "25,95");
     assert.equal(parsed.searchParams.get("jobs"), "Warrior,Sage");
     assert.equal(parsed.searchParams.get("pdate"), "20240201");
+    assert.equal(parsed.searchParams.get("pdscale"), "signed-log");
   });
 });
 
 test("startFilterUrlSync drops params when filters are cleared", async () => {
   await withWindow(
-    "https://example.com/stats?view=trend&raid=Eden&jobs=Warrior&pdate=20240201",
+    "https://example.com/stats?view=trend&raid=Eden&jobs=Warrior&pdate=20240201&pdscale=signed-log",
     (calls) => {
       __resetUrlStateForTests();
       const listeners = [];
@@ -100,12 +103,15 @@ test("startFilterUrlSync drops params when filters are cleared", async () => {
         selectedRaid: "",
         selectedJobs: new Set(),
         selectedPercentileDate: "",
+        parseDeltaScale: "original",
       });
       const [, , newUrl] = calls.at(-1);
       const parsed = new URL(`https://dummy${newUrl}`);
       assert.equal(parsed.searchParams.get("raid"), null);
       assert.equal(parsed.searchParams.get("jobs"), null);
       assert.equal(parsed.searchParams.get("pdate"), null);
+      // Linear/original is implicit, so the URL should drop the override entirely.
+      assert.equal(parsed.searchParams.get("pdscale"), null);
       assert.equal(parsed.searchParams.get("view"), "trend");
     }
   );
