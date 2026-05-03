@@ -347,36 +347,91 @@ th {
   flex-direction: column;
 }
 
-/* Header dropdown triggers */
+/* Primary selector shell: keeps raid/boss controls visually grouped as compact chips
+   without affecting the rest of the stacked filter controls below. */
+.primary-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #232527;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Anchor each overlay menu to its corresponding chip trigger. */
+.dropdown-section {
+  position: relative;
+}
+
+/* Faux chip triggers rendered from the hidden native selects. */
 .selectable-title,
 .selectable-subheader {
   cursor: pointer;
-  text-decoration: underline;
   display: inline-block;
-  margin-bottom: 0.5rem;
+  margin: 0;
   position: relative;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #3d4750;
+  border-radius: 999px;
+  background: #1a1d20;
+  color: #d9e4ed;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .selectable-title::after,
 .selectable-subheader::after {
   content: " ▼";
-  font-size: 0.8em;
+  color: #7cc7ff;
+  font-size: 0.82rem;
   margin-left: 0.3rem;
+}
+
+.selectable-title::before,
+.selectable-subheader::before {
+  color: #8fd1ff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.selectable-title::before {
+  content: "Raid ";
+}
+
+.selectable-subheader::before {
+  content: "Boss ";
+}
+
+.selectable-title:hover,
+.selectable-subheader:hover {
+  background: #20262b;
+  border-color: #4da3ff;
+  color: #fff;
 }
 
 /* Non-interactive state: no underline, no chevron, no pointer */
 .non-interactive {
   cursor: default;
-  text-decoration: none;
+  opacity: 0.72;
 }
 
 .non-interactive::after {
   content: "";
 }
 
-/* Custom dropdown container (overlay style) */
+/* Overlay menu shared by the chip triggers. */
 .custom-dropdown {
   position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
   background: #232527;
   border: 1px solid #333;
   box-shadow: 0 2px 8px #000;
@@ -384,16 +439,35 @@ th {
   width: max-content;
   min-width: 200px;
   z-index: 100;
+  border-radius: 10px;
+  padding: 0.35rem 0;
 }
 
 /* Individual option inside custom dropdown */
-.custom-dropdown div {
+.custom-dropdown-option {
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid #eee;
 }
 
-.custom-dropdown div:hover {
+.custom-dropdown-option:hover {
   background-color: #353535;
+}
+
+/* Separate semantic raid groups like Trial and Savage without adding per-row dividers. */
+.custom-dropdown-section + .custom-dropdown-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+/* Small group heading inside the raid dropdown. */
+.custom-dropdown-section-label {
+  padding: 0.35rem 1rem 0.2rem;
+  color: #8fb6d8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: default;
 }
 
 /* Hide dropdown by default */

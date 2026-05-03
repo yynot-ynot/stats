@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildRaidDropdownSections,
   populateDropdown,
   setupRaidBossFiltering,
   setupHeaderBindings,
@@ -202,6 +203,43 @@ test("populateDropdown resets boss selection when options change", () => {
     assert.equal(filterState.selectedBoss, "");
   });
   filterState.selectedBoss = originalBoss;
+});
+
+test("buildRaidDropdownSections groups known raids into Trial and Savage buckets", () => {
+  const sections = buildRaidDropdownSections([
+    "AAC Heavyweight",
+    "Trials III (Extreme)",
+    "AAC Cruiserweight",
+  ]);
+
+  assert.deepEqual(sections, [
+    {
+      label: "Trial",
+      items: ["Trials III (Extreme)"],
+    },
+    {
+      label: "Savage",
+      items: ["AAC Heavyweight", "AAC Cruiserweight"],
+    },
+  ]);
+});
+
+test("buildRaidDropdownSections falls back unknown raids into Other", () => {
+  const sections = buildRaidDropdownSections([
+    "Mystery Raid",
+    "AAC Heavyweight",
+  ]);
+
+  assert.deepEqual(sections, [
+    {
+      label: "Savage",
+      items: ["AAC Heavyweight"],
+    },
+    {
+      label: "Other",
+      items: ["Mystery Raid"],
+    },
+  ]);
 });
 
 test("raid filter changes rebuild boss options even without DOM events", () => {

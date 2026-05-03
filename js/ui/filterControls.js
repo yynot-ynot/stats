@@ -30,6 +30,11 @@ export function __getBossIndexCacheForTests() {
   return bossIndexCache;
 }
 
+// Stable top-level ordering for the grouped raid menu. Known raid families should
+// land in user-facing buckets before any uncategorized future content falls back
+// into "Other".
+const RAID_MENU_SECTION_ORDER = Object.freeze(["Trial", "Savage", "Other"]);
+
 /**
  * Sort a raw array of dropdown values using the appropriate override for the given DOM id.
  * When a custom order override exists it wins outright, otherwise the helper optionally
@@ -315,6 +320,8 @@ export function populateAllFilters(data, options = {}) {
 /**
  * Populate a custom dropdown visual container.
  * Used by the faux headers so the actual select element can remain hidden while still receiving events.
+ * The raid selector is special-cased to render grouped sections (Trial / Savage / Other),
+ * while every other selector continues to render as a flat list.
  *
  * @param {HTMLSelectElement} selectEl - The <select> element.
  * @param {HTMLElement} dropdownEl - The dropdown container.
@@ -322,8 +329,44 @@ export function populateAllFilters(data, options = {}) {
  */
 function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
   dropdownEl.innerHTML = "";
+  if (selectEl.id === "raid-select") {
+    const sections = buildRaidDropdownSections(
+      [...selectEl.options].map((opt) => opt.value)
+    );
+    sections.forEach((section) => {
+      const sectionEl = document.createElement("div");
+      sectionEl.className = "custom-dropdown-section";
+
+      const labelEl = document.createElement("div");
+      labelEl.className = "custom-dropdown-section-label";
+      labelEl.textContent = section.label;
+      sectionEl.appendChild(labelEl);
+
+      section.items.forEach((value) => {
+        const item = document.createElement("div");
+        item.className = "custom-dropdown-option";
+        item.textContent = value;
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          logger.info(
+            `[ui-active] custom dropdown selection for raid-select: "${selectEl.value || ""}" -> "${value}"`
+          );
+          titleEl.textContent = value;
+          selectEl.value = value;
+          dropdownEl.classList.add("hidden-dropdown");
+          selectEl.dispatchEvent(new Event("change"));
+        });
+        sectionEl.appendChild(item);
+      });
+
+      dropdownEl.appendChild(sectionEl);
+    });
+    return;
+  }
+
   [...selectEl.options].forEach((opt) => {
     const item = document.createElement("div");
+    item.className = "custom-dropdown-option";
     item.textContent = opt.value;
     item.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -339,6 +382,54 @@ function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
     });
     dropdownEl.appendChild(item);
   });
+}
+
+/**
+ * Group the visible raid option list into semantic menu sections for the custom
+ * dropdown. This keeps the hidden native <select> flat for compatibility while
+ * giving the live faux menu clearer scanning structure.
+ *
+ * @param {Array<string>} raidValues - Ordered raid labels already prepared for display.
+ * @returns {Array<{label: string, items: Array<string>}>} Sectioned menu model.
+ */
+export function buildRaidDropdownSections(raidValues) {
+  const sections = new Map();
+
+  raidValues.forEach((raid) => {
+    const sectionLabel = classifyRaidDropdownSection(raid);
+    if (!sections.has(sectionLabel)) {
+      sections.set(sectionLabel, []);
+    }
+    sections.get(sectionLabel).push(raid);
+  });
+
+  return RAID_MENU_SECTION_ORDER.filter((label) => sections.has(label)).map(
+    (label) => ({
+      label,
+      items: sections.get(label),
+    })
+  );
+}
+
+/**
+ * Map a raid label to the user-facing group shown in the custom raid dropdown.
+ * Keep this intentionally explicit so naming tweaks do not silently reshuffle
+ * content families in the menu.
+ *
+ * @param {string} raid
+ * @returns {string}
+ */
+function classifyRaidDropdownSection(raid) {
+  if (raid === "Trials III (Extreme)") {
+    return "Trial";
+  }
+  if (
+    raid === "AAC Cruiserweight" ||
+    raid === "AAC Heavyweight"
+  ) {
+    return "Savage";
+  }
+  return "Other";
 }
 
 /**

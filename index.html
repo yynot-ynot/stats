@@ -26,20 +26,24 @@
   </div>
 
   <div id="filters">
-    <!-- ================================
-         Raid Title and Custom Dropdown
-         ================================ -->
-    <div class="dropdown-section">
-      <h2 id="raid-title" class="selectable-title">[Select Raid]</h2>
-      <div id="raid-dropdown" class="custom-dropdown hidden-dropdown"></div>
-    </div>
+    <!-- Compact primary filter bar: the live app uses chip-style raid/boss triggers here
+         while keeping the hidden native selects below as the single source of truth. -->
+    <div class="primary-filter-bar">
+      <!-- ================================
+           Raid Title and Custom Dropdown
+           ================================ -->
+      <div class="dropdown-section">
+        <h2 id="raid-title" class="selectable-title">[Select Raid]</h2>
+        <div id="raid-dropdown" class="custom-dropdown hidden-dropdown"></div>
+      </div>
 
-    <!-- ================================
-         Boss Subheader and Custom Dropdown
-         ================================ -->
-    <div class="dropdown-section">
-      <h3 id="boss-subheader" class="selectable-subheader">[Select Boss]</h3>
-    <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
+      <!-- ================================
+           Boss Subheader and Custom Dropdown
+           ================================ -->
+      <div class="dropdown-section">
+        <h3 id="boss-subheader" class="selectable-subheader">[Select Boss]</h3>
+        <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
+      </div>
     </div>
 
     <!-- Hidden native <select> for accessibility/fallback -->
