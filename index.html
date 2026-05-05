@@ -5,6 +5,12 @@
   <meta charset="UTF-8" />
   <title>FFXIV DPS and Healing Trend</title>
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
   <!-- pako for gzip support -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <!-- Plotly.js for plotting -->
@@ -15,17 +21,24 @@
 </head>
 
 <body>
-  <h1>FFXIV DPS and Healing Trend</h1>
-  <div id="view-switcher">
-    <button type="button" data-view-id="trend" aria-pressed="true">
-      Trend View
-    </button>
-    <button type="button" data-view-id="percentile" aria-pressed="false">
-      Percentile View
-    </button>
+  <!-- Rule 3 header treatment: keep the editorial title styling, but replace the
+       large atmospheric band with a title-aligned horizontal rule that fades away
+       to the right before it reaches the page edge. -->
+  <div class="page-header rule-3">
+    <div class="page-title">
+      <p class="page-title-kicker">FFXIV Raid Performance</p>
+      <h1>DPS &amp; Healing Trend</h1>
+    </div>
   </div>
-
-  <div id="filters">
+  <div class="controls-group">
+    <div id="view-switcher">
+      <button type="button" data-view-id="trend" aria-pressed="true">
+        Trend View
+      </button>
+      <button type="button" data-view-id="percentile" aria-pressed="false">
+        Percentile View
+      </button>
+    </div>
     <!-- Compact primary filter bar: the live app uses chip-style raid/boss triggers here
          while keeping the hidden native selects below as the single source of truth. -->
     <div class="primary-filter-bar">
@@ -45,7 +58,9 @@
         <div id="boss-dropdown" class="custom-dropdown hidden-dropdown"></div>
       </div>
     </div>
+  </div>
 
+  <div id="filters">
     <!-- Hidden native <select> for accessibility/fallback -->
     <select id="raid-select" style="display: none"></select>
     <select id="boss-select" style="display: none"></select>
@@ -61,6 +76,7 @@
       <div class="medieval-slider-selected-value"></div>
     </div>
     <!-- (End Percentile Slider) -->
+  </div>
   </div>
 
   <div id="trend-view-placeholder" class="chart-empty-message" data-view="trend"></div>
