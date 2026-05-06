@@ -21,6 +21,14 @@ body {
   display: none !important;
 }
 
+body[data-app-loading="true"] #percentile-slider-container,
+body[data-app-loading="true"] #reference-percentile-container,
+body[data-app-loading="true"] #comparison-slider-container,
+body[data-app-loading="true"] #sidebar-header-bar,
+body[data-app-loading="true"] #percentile-view-container {
+  display: none !important;
+}
+
 /* Rule 3 header treatment: title remains editorial, but separation comes from a
    bottom rule that starts under the title block and fades away to the right. */
 .page-header {

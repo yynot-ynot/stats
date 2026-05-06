@@ -512,8 +512,12 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
   const parseScaleContainer = document.getElementById(
     "parse-delta-scale-container"
   );
+  const bodyEl = document.body;
 
   if (!isVisible) {
+    if (bodyEl) {
+      delete bodyEl.dataset.appLoading;
+    }
     indicatorEl.classList.add("view-hidden");
     indicatorEl.setAttribute("aria-hidden", "true");
     if (trendPlaceholder) {
@@ -526,6 +530,10 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
       }
     }
     return;
+  }
+
+  if (bodyEl) {
+    bodyEl.dataset.appLoading = "true";
   }
 
   if (parseScaleContainer) {
