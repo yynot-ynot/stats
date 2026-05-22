@@ -13,24 +13,66 @@ function createDeferred() {
   return { promise, resolve, reject };
 }
 
-test("scheduler prioritizes the active raid before background loading", async () => {
+// The scheduler now operates on raid/entity groups. The tests focus on the
+// loading contract the UI depends on: active entity first, then same-raid
+// background warming, then unrelated raids.
+test("scheduler prioritizes the active raid/entity group before background warming", async () => {
   const started = [];
   const deferredByPath = new Map();
-  const loaded = [];
 
   const allFiles = [
-    { path: "json/a-1.json.gz", raid: "Raid A" },
-    { path: "json/a-2.json.gz", raid: "Raid A" },
-    { path: "json/b-1.json.gz", raid: "Raid B" },
-    { path: "json/b-2.json.gz", raid: "Raid B" },
-    { path: "json/b-3.json.gz", raid: "Raid B" },
+    {
+      path: "json/fru-whole-dps.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::whole-fight",
+    },
+    {
+      path: "json/fru-whole-healing.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::whole-fight",
+    },
+    {
+      path: "json/fru-p1-dps.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::p1-fatebreaker",
+    },
+    {
+      path: "json/fru-p1-healing.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::p1-fatebreaker",
+    },
+    {
+      path: "json/other-raid-dps.json.gz",
+      raid: "AAC Heavyweight",
+      groupKey: "AAC Heavyweight::vamp-fatale",
+    },
   ];
 
   const scheduler = createRaidLoadScheduler({
     allFiles,
+    filesByGroup: new Map([
+      [
+        "Futures Rewritten::whole-fight",
+        allFiles.filter((record) => record.groupKey === "Futures Rewritten::whole-fight"),
+      ],
+      [
+        "Futures Rewritten::p1-fatebreaker",
+        allFiles.filter((record) => record.groupKey === "Futures Rewritten::p1-fatebreaker"),
+      ],
+      [
+        "AAC Heavyweight::vamp-fatale",
+        allFiles.filter((record) => record.groupKey === "AAC Heavyweight::vamp-fatale"),
+      ],
+    ]),
     filesByRaid: new Map([
-      ["Raid A", allFiles.filter((file) => file.raid === "Raid A")],
-      ["Raid B", allFiles.filter((file) => file.raid === "Raid B")],
+      [
+        "Futures Rewritten",
+        allFiles.filter((record) => record.raid === "Futures Rewritten"),
+      ],
+      [
+        "AAC Heavyweight",
+        allFiles.filter((record) => record.raid === "AAC Heavyweight"),
+      ],
     ]),
     backgroundConcurrency: 2,
     loadFile: async (record) => {
@@ -39,50 +81,63 @@ test("scheduler prioritizes the active raid before background loading", async ()
       deferredByPath.set(record.path, deferred);
       return deferred.promise;
     },
-    onFileLoaded: (record, rows) => {
-      loaded.push([record.path, rows]);
-    },
+    onFileLoaded() {},
     onFileFailed() {},
   });
 
-  const priorityPromise = scheduler.prioritizeRaid("Raid A");
-  assert.deepEqual(started, ["json/a-1.json.gz", "json/a-2.json.gz"]);
+  const priorityPromise = scheduler.prioritizeSelection(
+    "Futures Rewritten::whole-fight"
+  );
+  assert.deepEqual(started, [
+    "json/fru-whole-dps.json.gz",
+    "json/fru-whole-healing.json.gz",
+  ]);
 
-  deferredByPath.get("json/a-1.json.gz").resolve([]);
-  deferredByPath.get("json/a-2.json.gz").resolve([]);
+  deferredByPath.get("json/fru-whole-dps.json.gz").resolve([]);
+  deferredByPath.get("json/fru-whole-healing.json.gz").resolve([]);
   await priorityPromise;
 
   scheduler.startBackgroundLoading();
   assert.deepEqual(started, [
-    "json/a-1.json.gz",
-    "json/a-2.json.gz",
-    "json/b-1.json.gz",
-    "json/b-2.json.gz",
+    "json/fru-whole-dps.json.gz",
+    "json/fru-whole-healing.json.gz",
+    "json/fru-p1-dps.json.gz",
+    "json/fru-p1-healing.json.gz",
   ]);
 
-  deferredByPath.get("json/b-1.json.gz").resolve([]);
+  deferredByPath.get("json/fru-p1-dps.json.gz").resolve([]);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(started, [
-    "json/a-1.json.gz",
-    "json/a-2.json.gz",
-    "json/b-1.json.gz",
-    "json/b-2.json.gz",
-    "json/b-3.json.gz",
+    "json/fru-whole-dps.json.gz",
+    "json/fru-whole-healing.json.gz",
+    "json/fru-p1-dps.json.gz",
+    "json/fru-p1-healing.json.gz",
+    "json/other-raid-dps.json.gz",
   ]);
 
-  deferredByPath.get("json/b-2.json.gz").resolve([]);
-  deferredByPath.get("json/b-3.json.gz").resolve([]);
+  deferredByPath.get("json/fru-p1-healing.json.gz").resolve([]);
+  deferredByPath.get("json/other-raid-dps.json.gz").resolve([]);
 });
 
-test("scheduler retries a failed priority file once before surfacing final failure", async () => {
+// Retry behavior is preserved from the old raid-wide scheduler; only the scope
+// of "active" work changed.
+test("scheduler retries a failed active-selection file once before surfacing final failure", async () => {
   const attemptsByPath = new Map();
   const failures = [];
 
-  const allFiles = [{ path: "json/a-1.json.gz", raid: "Raid A" }];
+  const allFiles = [
+    {
+      path: "json/fru-whole-dps.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::whole-fight",
+    },
+  ];
+
   const scheduler = createRaidLoadScheduler({
     allFiles,
-    filesByRaid: new Map([["Raid A", allFiles]]),
+    filesByGroup: new Map([["Futures Rewritten::whole-fight", allFiles]]),
+    filesByRaid: new Map([["Futures Rewritten", allFiles]]),
     loadFile: async (record) => {
       const attempts = (attemptsByPath.get(record.path) || 0) + 1;
       attemptsByPath.set(record.path, attempts);
@@ -94,29 +149,53 @@ test("scheduler retries a failed priority file once before surfacing final failu
     },
   });
 
-  await scheduler.prioritizeRaid("Raid A");
+  await scheduler.prioritizeSelection("Futures Rewritten::whole-fight");
 
-  assert.equal(attemptsByPath.get("json/a-1.json.gz"), 2);
-  assert.deepEqual(failures, [["json/a-1.json.gz", "fail-2"]]);
-  assert.equal(scheduler.getFileState("json/a-1.json.gz").status, "failed");
+  assert.equal(attemptsByPath.get("json/fru-whole-dps.json.gz"), 2);
+  assert.deepEqual(failures, [["json/fru-whole-dps.json.gz", "fail-2"]]);
+  assert.equal(
+    scheduler.getFileState("json/fru-whole-dps.json.gz").status,
+    "failed"
+  );
 });
 
-test("scheduler reprioritizes the latest active raid before older queued files", async () => {
+// Reprioritization must not cancel in-flight work, but it should redirect the
+// next queue pick toward the newest user selection.
+test("scheduler reprioritizes the newest active selection before older same-raid work", async () => {
   const started = [];
   const deferredByPath = new Map();
 
   const allFiles = [
-    { path: "json/a-1.json.gz", raid: "Raid A" },
-    { path: "json/a-2.json.gz", raid: "Raid A" },
-    { path: "json/b-1.json.gz", raid: "Raid B" },
+    {
+      path: "json/fru-whole-dps.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::whole-fight",
+    },
+    {
+      path: "json/fru-whole-healing.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::whole-fight",
+    },
+    {
+      path: "json/fru-p1-dps.json.gz",
+      raid: "Futures Rewritten",
+      groupKey: "Futures Rewritten::p1-fatebreaker",
+    },
   ];
 
   const scheduler = createRaidLoadScheduler({
     allFiles,
-    filesByRaid: new Map([
-      ["Raid A", allFiles.filter((file) => file.raid === "Raid A")],
-      ["Raid B", allFiles.filter((file) => file.raid === "Raid B")],
+    filesByGroup: new Map([
+      [
+        "Futures Rewritten::whole-fight",
+        allFiles.filter((record) => record.groupKey === "Futures Rewritten::whole-fight"),
+      ],
+      [
+        "Futures Rewritten::p1-fatebreaker",
+        allFiles.filter((record) => record.groupKey === "Futures Rewritten::p1-fatebreaker"),
+      ],
     ]),
+    filesByRaid: new Map([["Futures Rewritten", allFiles]]),
     backgroundConcurrency: 1,
     loadFile: async (record) => {
       started.push(record.path);
@@ -128,15 +207,20 @@ test("scheduler reprioritizes the latest active raid before older queued files",
     onFileFailed() {},
   });
 
-  void scheduler.prioritizeRaid("Raid A");
-  assert.deepEqual(started, ["json/a-1.json.gz"]);
+  void scheduler.prioritizeSelection("Futures Rewritten::whole-fight");
+  assert.deepEqual(started, ["json/fru-whole-dps.json.gz"]);
 
-  const raidBPromise = scheduler.prioritizeRaid("Raid B");
-  deferredByPath.get("json/a-1.json.gz").resolve([]);
+  const phasePromise = scheduler.prioritizeSelection(
+    "Futures Rewritten::p1-fatebreaker"
+  );
+  deferredByPath.get("json/fru-whole-dps.json.gz").resolve([]);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.deepEqual(started, ["json/a-1.json.gz", "json/b-1.json.gz"]);
+  assert.deepEqual(started, [
+    "json/fru-whole-dps.json.gz",
+    "json/fru-p1-dps.json.gz",
+  ]);
 
-  deferredByPath.get("json/b-1.json.gz").resolve([]);
-  await raidBPromise;
+  deferredByPath.get("json/fru-p1-dps.json.gz").resolve([]);
+  await phasePromise;
 });

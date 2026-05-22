@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildRaidDropdownSections,
+  populateAllFilters,
   populateDropdown,
   setupRaidBossFiltering,
   setupHeaderBindings,
@@ -283,6 +284,89 @@ test("raid filter changes rebuild boss options even without DOM events", () => {
     filterState.selectedBoss = originalBoss;
     __setBossIndexCacheForTests(previousCache);
     restoreDocument();
+  }
+});
+
+test("populateAllFilters keeps manifest-provided phase entities available for the active raid", () => {
+  const previousCache = __getBossIndexCacheForTests();
+  const originalRaid = filterState.selectedRaid;
+  const originalBoss = filterState.selectedBoss;
+
+  const raidSelect = createInteractiveSelect("raid-select", ["Futures Rewritten"]);
+  const bossSelect = createInteractiveSelect("boss-select");
+  const dpsTypeSelect = createInteractiveSelect("dps-type-select");
+  const classSelect = createInteractiveSelect("class-select");
+  const nodes = {
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "dps-type-select": dpsTypeSelect,
+    "class-select": classSelect,
+    "boss-subheader": createTitleElement("boss-subheader"),
+    "boss-dropdown": createDropdownElement("boss-dropdown"),
+  };
+
+  filterState.selectedRaid = "Futures Rewritten";
+  filterState.selectedBoss = "p3-oracle-of-darkness";
+
+  const restoreDocument = installDocumentWithNodes(nodes);
+  const originalSetupPercentileSlider = global.setupPercentileSlider;
+  const originalSetupReferencePercentileSlider = global.setupReferencePercentileSlider;
+  const originalSetupComparisonPercentileSlider = global.setupComparisonPercentileSlider;
+
+  try {
+    populateAllFilters(
+      [
+        {
+          raid: "Futures Rewritten",
+          boss: "P3: Oracle of Darkness",
+          entitySlug: "p3-oracle-of-darkness",
+          entityLabel: "P3: Oracle of Darkness",
+          date: "20260521",
+          percentile: 50,
+          class: "Reaper",
+          dps_type: "rdps",
+        },
+      ],
+      {
+        raidValues: ["Futures Rewritten"],
+        bossValues: [
+          "p1-fatebreaker",
+          "p2-usurper-of-frost",
+          "p3-oracle-of-darkness",
+          "p4-enter-the-dragon",
+          "p5-pandora",
+        ],
+        bossLabelMap: {
+          "p1-fatebreaker": "P1: Fatebreaker",
+          "p2-usurper-of-frost": "P2: Usurper of Frost",
+          "p3-oracle-of-darkness": "P3: Oracle of Darkness",
+          "p4-enter-the-dragon": "P4: Enter the Dragon",
+          "p5-pandora": "P5: Pandora",
+        },
+        preferredRaid: "Futures Rewritten",
+        preferredBoss: "p3-oracle-of-darkness",
+      }
+    );
+
+    assert.deepEqual(
+      bossSelect.options.map((opt) => opt.value),
+      [
+        "p1-fatebreaker",
+        "p2-usurper-of-frost",
+        "p3-oracle-of-darkness",
+        "p4-enter-the-dragon",
+        "p5-pandora",
+      ]
+    );
+    assert.equal(bossSelect.value, "p3-oracle-of-darkness");
+  } finally {
+    restoreDocument();
+    filterState.selectedRaid = originalRaid;
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    global.setupPercentileSlider = originalSetupPercentileSlider;
+    global.setupReferencePercentileSlider = originalSetupReferencePercentileSlider;
+    global.setupComparisonPercentileSlider = originalSetupComparisonPercentileSlider;
   }
 });
 

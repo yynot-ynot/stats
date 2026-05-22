@@ -20,6 +20,7 @@ const logger = getLogger("filterControls");
 let bossIndexCache = {
   bossesByRaid: {},
   allBosses: new Set(),
+  bossLabelByValue: {},
 };
 
 export function __setBossIndexCacheForTests(cache) {
@@ -86,24 +87,28 @@ export function sortDropdownValues(values, selectId, latestDateMap) {
  * without issuing new fetches.
  *
  * @param {Array<Object>} data - Full dataset rows containing { raid, boss } pairs.
- * @returns {{bossesByRaid: Object<string, Set<string>>, allBosses: Set<string>}} Aggregated lookup.
+ * @returns {{bossesByRaid: Object<string, Set<string>>, allBosses: Set<string>, bossLabelByValue: Object<string, string>}} Aggregated lookup.
  */
 export function buildBossIndex(data) {
   const bossesByRaid = {};
   const allBosses = new Set();
+  const bossLabelByValue = {};
 
   data.forEach((entry) => {
-    if (!entry?.boss) return;
-    allBosses.add(entry.boss);
+    const entityValue = entry?.entitySlug || entry?.boss;
+    const entityLabel = entry?.entityLabel || entry?.boss;
+    if (!entityValue || !entityLabel) return;
+    allBosses.add(entityValue);
+    bossLabelByValue[entityValue] = entityLabel;
     if (!entry.raid) return;
 
     if (!bossesByRaid[entry.raid]) {
       bossesByRaid[entry.raid] = new Set();
     }
-    bossesByRaid[entry.raid].add(entry.boss);
+    bossesByRaid[entry.raid].add(entityValue);
   });
 
-  return { bossesByRaid, allBosses };
+  return { bossesByRaid, allBosses, bossLabelByValue };
 }
 
 /**
@@ -116,13 +121,14 @@ export function buildBossIndex(data) {
  * @param {string} label - Label used if "All" option is added.
  * @param {Object} [options] - Optional configuration overrides.
  * @param {Object<string, string>} [options.latestDateMap] - Map of item -> latest YYYYMMDD date for sorting.
+ * @param {Object<string, string>} [options.optionLabels] - Map of option value -> user-facing label.
  * @param {string} [options.preferredValue] - Selection to preserve when it exists in the option set.
  */
 export function populateDropdown(selectElement, valueSet, label, options = {}) {
   if (!selectElement) return;
 
   const id = selectElement.id;
-  const { latestDateMap, preferredValue } = options;
+  const { latestDateMap, optionLabels = {}, preferredValue } = options;
   const values = sortDropdownValues(Array.from(valueSet), id, latestDateMap);
 
   selectElement.innerHTML = "";
@@ -139,7 +145,7 @@ export function populateDropdown(selectElement, valueSet, label, options = {}) {
   values.forEach((value) => {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = optionLabels[value] || value;
     selectElement.appendChild(option);
   });
 
@@ -234,7 +240,8 @@ export function setupHeaderBindings() {
   const bossPlaceholder = "[Select Boss]";
 
   raidTitle.textContent = raidSelect.value || raidPlaceholder;
-  bossSubheader.textContent = bossSelect.value || bossPlaceholder;
+  bossSubheader.textContent =
+    getSelectedOptionLabel(bossSelect) || bossPlaceholder;
 
   setupSingleHeaderBehavior(
     raidSelect,
@@ -268,13 +275,19 @@ export function setupHeaderBindings() {
  * @param {Object} [options]
  * @param {Iterable<string>} [options.raidValues] - Manifest-derived raid options that should remain available even when only one raid's rows are loaded.
  * @param {Object<string, string>} [options.raidLatestDates] - Manifest-derived latest dates for raid sorting.
+ * @param {Iterable<string>} [options.bossValues] - Manifest-derived entity ids for the active raid.
+ * @param {Object<string, string>} [options.bossLabelMap] - Map of entity id -> visible label.
  * @param {string} [options.preferredRaid] - Raid that should remain selected after repopulation.
+ * @param {string} [options.preferredBoss] - Entity slug that should remain selected after repopulation.
  */
 export function populateAllFilters(data, options = {}) {
   const {
     raidValues,
     raidLatestDates,
+    bossValues,
+    bossLabelMap,
     preferredRaid,
+    preferredBoss,
   } = options;
 
   // Track each raid's most recent date so the dropdown can surface the newest content first.
@@ -288,9 +301,14 @@ export function populateAllFilters(data, options = {}) {
   });
 
   bossIndexCache = buildBossIndex(data);
+  mergeManifestBossOptions({
+    preferredRaid: preferredRaid || filterState.selectedRaid,
+    bossValues,
+    bossLabelMap,
+  });
 
   const raids = raidValues ? new Set(raidValues) : new Set(data.map((d) => d.raid));
-  const bosses = bossIndexCache.allBosses;
+  const bosses = bossValues ? new Set(bossValues) : bossIndexCache.allBosses;
   const percentiles = new Set(data.map((d) => d.percentile));
   const classes = new Set(data.map((d) => d.class));
   const dpsTypes = new Set(
@@ -301,7 +319,10 @@ export function populateAllFilters(data, options = {}) {
     latestDateMap: raidLatestDates || derivedRaidLatestDates,
     preferredValue: preferredRaid || filterState.selectedRaid,
   });
-  populateDropdown(document.getElementById("boss-select"), bosses, "Boss");
+  populateDropdown(document.getElementById("boss-select"), bosses, "Boss", {
+    optionLabels: bossLabelMap || bossIndexCache.bossLabelByValue,
+    preferredValue: preferredBoss || filterState.selectedBoss,
+  });
   setupRaidBossFiltering();
 
   setupPercentileSlider(percentiles);
@@ -315,6 +336,35 @@ export function populateAllFilters(data, options = {}) {
   );
 
   populateDropdown(document.getElementById("class-select"), classes, "Class");
+}
+
+/**
+ * Merge manifest-derived entity choices into the boss cache used by the
+ * dependent raid -> boss selector.
+ *
+ * When only one entity's rows are loaded, row-derived boss indexing sees just
+ * that single entity. The manifest is the source of truth for what *could* be
+ * loaded for the active raid, so we seed those options back into the cache to
+ * avoid collapsing phase-aware raids down to one visible choice.
+ *
+ * @param {Object} params
+ * @param {string} params.preferredRaid
+ * @param {Iterable<string>} [params.bossValues]
+ * @param {Object<string, string>} [params.bossLabelMap]
+ */
+function mergeManifestBossOptions({ preferredRaid, bossValues, bossLabelMap }) {
+  if (!preferredRaid || !bossValues) {
+    return;
+  }
+
+  const manifestBosses = new Set(bossValues);
+  bossIndexCache.bossesByRaid[preferredRaid] = manifestBosses;
+  manifestBosses.forEach((value) => {
+    bossIndexCache.allBosses.add(value);
+    if (bossLabelMap?.[value]) {
+      bossIndexCache.bossLabelByValue[value] = bossLabelMap[value];
+    }
+  });
 }
 
 /**
@@ -367,7 +417,7 @@ function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
   [...selectEl.options].forEach((opt) => {
     const item = document.createElement("div");
     item.className = "custom-dropdown-option";
-    item.textContent = opt.value;
+    item.textContent = opt.textContent;
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       if (selectEl.id === "raid-select") {
@@ -375,7 +425,7 @@ function populateCustomDropdown(selectEl, dropdownEl, titleEl) {
           `[ui-active] custom dropdown selection for raid-select: "${selectEl.value || ""}" -> "${opt.value}"`
         );
       }
-      titleEl.textContent = opt.value;
+      titleEl.textContent = opt.textContent;
       selectEl.value = opt.value;
       dropdownEl.classList.add("hidden-dropdown");
       selectEl.dispatchEvent(new Event("change"));
@@ -462,7 +512,12 @@ export function setupRaidBossFiltering() {
       filterState.selectedBoss && bossesForRaid.has(filterState.selectedBoss)
         ? filterState.selectedBoss
         : null;
-    populateDropdown(bossSelect, bossesForRaid, "Boss");
+    populateDropdown(bossSelect, bossesForRaid, "Boss", {
+      optionLabels: bossIndexCache.bossLabelByValue,
+      // Preserve the current entity selection when the raid rebroadcasts so
+      // the visible boss/phase header stays aligned with URL hydration.
+      preferredValue: preferredBoss,
+    });
 
     if (preferredBoss) {
       const hasPreferredOption = Array.from(bossSelect.options).some(
@@ -478,7 +533,7 @@ export function setupRaidBossFiltering() {
 
     const bossTitle = document.getElementById("boss-subheader");
     if (bossTitle) {
-      bossTitle.textContent = bossSelect.value || "[Select Boss]";
+      bossTitle.textContent = getSelectedOptionLabel(bossSelect) || "[Select Boss]";
       bossTitle.__updateDropdownInteractivity?.();
     }
     const bossDropdown = document.getElementById("boss-dropdown");
@@ -530,7 +585,11 @@ function setupSingleHeaderBehavior(
 
   const syncTitleFromSelect = () => {
     if (!titleEl) return;
-    titleEl.textContent = selectEl.value || fallbackText || titleEl.textContent;
+    titleEl.textContent =
+      getSelectedOptionLabel(selectEl) ||
+      selectEl.value ||
+      fallbackText ||
+      titleEl.textContent;
   };
 
   const updateInteractivity = () => {
@@ -572,4 +631,23 @@ function setupSingleHeaderBehavior(
     selectEl.addEventListener("change", changeHandler);
     selectEl.__headerSyncHandler = changeHandler;
   }
+}
+
+/**
+ * Resolve the visible label for the current select value.
+ *
+ * Real browser selects keep `selectedOptions` synchronized automatically, but
+ * lightweight test doubles often mutate `value` directly. Falling back to an
+ * option lookup by value keeps the slug-backed entity selector deterministic in
+ * both production hydration paths and unit tests.
+ *
+ * @param {HTMLSelectElement} selectEl
+ * @returns {string}
+ */
+function getSelectedOptionLabel(selectEl) {
+  if (!selectEl) return "";
+  const selectedOption =
+    selectEl.selectedOptions?.[0] ||
+    Array.from(selectEl.options || []).find((opt) => opt.value === selectEl.value);
+  return selectedOption?.textContent || "";
 }

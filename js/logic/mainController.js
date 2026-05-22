@@ -7,6 +7,9 @@ import {
 } from "../core/dataLoader.js";
 import {
   buildManifestRaidIndex,
+  buildRaidEntityKey,
+  getManifestFilesForSelection,
+  resolveEffectiveEntitySlug,
   resolveEffectiveRaid,
 } from "../core/manifestRaidIndex.js";
 import { createRaidLoadScheduler } from "../core/raidLoadScheduler.js";
@@ -50,6 +53,7 @@ let manifestIndex = null;
 let raidDataStore = null;
 let raidLoadScheduler = null;
 let activeRaid = "";
+let activeEntitySlug = "";
 let chromeInitialized = false;
 let filterUrlSyncStarted = false;
 let raidChangeListenerInitialized = false;
@@ -94,18 +98,24 @@ export async function init() {
     const t1 = performance.now();
     const files = await fetchAvailableJsonFiles("json/");
     manifestIndex = buildManifestRaidIndex(files);
-    raidDataStore = createRaidDataStore(manifestIndex.filesByRaid);
+    raidDataStore = createRaidDataStore(manifestIndex.filesByGroup);
     raidLoadScheduler = createRaidLoadScheduler({
       allFiles: manifestIndex.allFiles,
+      filesByGroup: manifestIndex.filesByGroup,
       filesByRaid: manifestIndex.filesByRaid,
       loadFile: async (record) => fetchAndDecompressJsonGz(record.path),
       onFileLoaded: (record, rows) => {
-        raidDataStore.appendFileRows(record.raid, record.path, rows);
+        const normalizedRows = rows.map((row) => ({
+          ...row,
+          entitySlug: record.entitySlug || row.entitySlug || row.boss,
+          entityLabel: record.entityLabel || row.entityLabel || row.boss,
+        }));
+        raidDataStore.appendFileRows(record.groupKey, record.path, normalizedRows);
         finalFailedFiles.delete(record.path);
         syncLoadFailureMessage();
       },
       onFileFailed: (record, error) => {
-        raidDataStore.markFileFailed(record.raid, record.path, error);
+        raidDataStore.markFileFailed(record.groupKey, record.path, error);
         finalFailedFiles.set(record.path, error);
         logger.warn(`Error loading ${record.path}:`, error);
         syncLoadFailureMessage();
@@ -124,8 +134,14 @@ export async function init() {
       `[ui-active] resolved startup raid "${effectiveRaid}" from URL raid "${initialFiltersFromUrl.selectedRaid || ""}"`
     );
     primeManifestRaidSelection(effectiveRaid);
-    ensureRaidChangeListener();
-    await requestRaidActivation(effectiveRaid, {
+    ensureSelectionChangeListeners();
+    const effectiveEntitySlug = resolveEffectiveEntitySlug(
+      manifestIndex,
+      effectiveRaid,
+      initialFiltersFromUrl.selectedBoss
+    );
+    primeManifestEntitySelection(effectiveRaid, effectiveEntitySlug);
+    await requestSelectionActivation(effectiveRaid, effectiveEntitySlug, {
       source: "startup",
       applyUrlFilters: true,
       urlFilters: initialFiltersFromUrl,
@@ -150,53 +166,64 @@ export async function init() {
 }
 
 /**
- * Load the currently requested raid, derive its row-driven UI state, and
- * activate that raid as the current app context without restoring prior
- * user-made selections. If a newer raid request arrives while the current load
- * is in flight, this activation exits early and lets the newer request win.
+ * Load the currently requested raid/entity selection and activate that slice
+ * as the current app context without restoring prior user-made selections.
+ *
+ * If a newer selection request arrives while the current load is in flight,
+ * this activation exits early and lets the newer request win. The scheduler
+ * still allows any already-started file work to finish, but stale row-driven
+ * UI should not be applied after supersession.
  *
  * @param {string} raid
+ * @param {string} entitySlug
  * @param {Object} options
  * @param {string} [options.source="unknown"]
  * @param {boolean} [options.applyUrlFilters=false]
  * @param {Object} [options.urlFilters]
  */
-async function activateRaid(raid, options = {}) {
+async function activateSelection(raid, entitySlug, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
+  if (!entitySlug) return;
 
   const { source = "unknown", applyUrlFilters = false, urlFilters = null } = options;
-  processingRaid = raid;
+  const groupKey = buildRaidEntityKey(raid, entitySlug);
+  processingRaid = groupKey;
   try {
-    logger.info(`[ui-active] begin activation for raid "${raid}" (source=${source})`);
+    logger.info(
+      `[ui-active] begin activation for selection "${groupKey}" (source=${source})`
+    );
     isLoading = true;
     syncActiveRaidLoadingIndicator(true, raid);
-    raidLoadScheduler.setActiveRaid(raid);
-    raidDataStore.markRaidLoading(raid);
+    raidLoadScheduler.setActiveSelection(groupKey);
+    raidDataStore.markGroupLoading(groupKey);
 
     const tRaidLoadStart = performance.now();
     const requestVersion = raidRequestVersion;
-    const supersedeWaiter = createSupersedingRaidWaiter(raid, requestVersion);
+    const supersedeWaiter = createSupersedingRaidWaiter(groupKey, requestVersion);
     const activationOutcome = await Promise.race([
-      raidLoadScheduler.prioritizeRaid(raid).then(() => "loaded"),
+      raidLoadScheduler.prioritizeSelection(groupKey).then(() => "loaded"),
       supersedeWaiter.promise,
     ]);
     supersedeWaiter.cancel();
     if (activationOutcome === "superseded") {
-      logger.info(`[ui-active] activation for raid "${raid}" superseded by a newer request`);
+      logger.info(
+        `[ui-active] activation for selection "${groupKey}" superseded by a newer request`
+      );
       return;
     }
-    if (requestedRaid && requestedRaid !== raid) {
+    if (requestedRaid && requestedRaid !== groupKey) {
       logger.info(
-        `[ui-active] activation for raid "${raid}" skipped because "${requestedRaid}" is now pending`
+        `[ui-active] activation for selection "${groupKey}" skipped because "${requestedRaid}" is now pending`
       );
       return;
     }
 
     activeRaid = raid;
-    const activeRaidRows = raidDataStore.getRaidRows(raid);
+    activeEntitySlug = entitySlug;
+    const activeRaidRows = raidDataStore.getGroupRows(groupKey);
     const tRaidLoadEnd = performance.now();
     logger.info(
-      `[ui-active] activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
+      `[ui-active] activated selection "${groupKey}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
     );
 
     setupDataDisplayManager(activeRaidRows);
@@ -204,6 +231,16 @@ async function activateRaid(raid, options = {}) {
       raidValues: manifestIndex.sortedRaids,
       raidLatestDates: manifestIndex.latestDateByRaid,
       preferredRaid: raid,
+      bossValues: new Set(
+        (manifestIndex.entitiesByRaid.get(raid) || []).map((entry) => entry.slug)
+      ),
+      bossLabelMap: Object.fromEntries(
+        (manifestIndex.entitiesByRaid.get(raid) || []).map((entry) => [
+          entry.slug,
+          entry.label,
+        ])
+      ),
+      preferredBoss: entitySlug,
     });
 
     if (!chromeInitialized) {
@@ -230,11 +267,11 @@ async function activateRaid(raid, options = {}) {
     isLoading = false;
     syncActiveRaidLoadingIndicator(false, raid);
     logger.info(
-      `[ui-active] UI activation complete for raid "${raid}" (source=${source}, rows=${activeRaidRows.length}, bosses=${new Set(activeRaidRows.map((row) => row.boss).filter(Boolean)).size})`
+      `[ui-active] UI activation complete for selection "${groupKey}" (source=${source}, rows=${activeRaidRows.length}, bosses=${new Set(activeRaidRows.map((row) => row.boss).filter(Boolean)).size})`
     );
     logDisplayedRaidBossState();
   } finally {
-    if (processingRaid === raid) {
+    if (processingRaid === groupKey) {
       processingRaid = "";
     }
   }
@@ -249,25 +286,28 @@ async function activateRaid(raid, options = {}) {
  * @param {Object} options
  * @returns {Promise<void>}
  */
-function requestRaidActivation(raid, options = {}) {
-  if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
+function requestSelectionActivation(raid, entitySlug, options = {}) {
+  if (!raid || !entitySlug || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
     return Promise.resolve();
   }
-  if (activationInFlightPromise && raid === processingRaid) {
-    logger.debug(`Ignoring duplicate activation request for in-flight raid "${raid}"`);
+  const groupKey = buildRaidEntityKey(raid, entitySlug);
+  if (activationInFlightPromise && groupKey === processingRaid) {
+    logger.debug(
+      `Ignoring duplicate activation request for in-flight selection "${groupKey}"`
+    );
     return activationInFlightPromise;
   }
 
-  requestedRaid = raid;
-  requestedRaidOptions = options;
+  requestedRaid = groupKey;
+  requestedRaidOptions = { ...options, raid, entitySlug };
   raidRequestVersion += 1;
   logger.info(
-    `[ui-active] queued activation request for raid "${raid}" (requestVersion=${raidRequestVersion}, source=${options.source || "unknown"})`
+    `[ui-active] queued activation request for selection "${groupKey}" (requestVersion=${raidRequestVersion}, source=${options.source || "unknown"})`
   );
   isLoading = true;
   syncActiveRaidLoadingIndicator(true, raid);
-  raidLoadScheduler.setActiveRaid(raid);
-  raidDataStore.markRaidLoading(raid);
+  raidLoadScheduler.setActiveSelection(groupKey);
+  raidDataStore.markGroupLoading(groupKey);
   notifyActivationWaiters();
 
   if (activationInFlightPromise) {
@@ -282,18 +322,19 @@ function requestRaidActivation(raid, options = {}) {
 
 async function processRequestedRaidActivations() {
   while (requestedRaid) {
-    const raid = requestedRaid;
     const options = requestedRaidOptions || {};
+    const { raid = "", entitySlug = "" } = options;
     requestedRaid = "";
     requestedRaidOptions = null;
-    await activateRaid(raid, options);
+    await activateSelection(raid, entitySlug, options);
   }
 }
 
 /**
  * Allow an in-flight activation to stop waiting once a different raid has been
  * requested. The scheduler still finishes any already-started file work, but
- * the controller no longer applies stale row-driven UI to the superseded raid.
+ * the controller no longer applies stale row-driven UI to the superseded
+ * selection.
  *
  * @param {string} raid
  * @param {number} requestVersion
@@ -433,34 +474,55 @@ function logDisplayedRaidBossState() {
   );
 }
 
-function ensureRaidChangeListener() {
+function ensureSelectionChangeListeners() {
   if (raidChangeListenerInitialized) return;
   raidChangeListenerInitialized = true;
   subscribeToFilterChanges((state, change) => {
-    if (!change || change.key !== "selectedRaid") return;
+    if (!change) return;
+    if (change.key === "selectedRaid") {
+      const nextRaid = state.selectedRaid || "";
+      if (!nextRaid || change.previousValue === nextRaid) {
+        return;
+      }
+      const nextEntitySlug = resolveEffectiveEntitySlug(
+        manifestIndex,
+        nextRaid,
+        ""
+      );
+      primeManifestEntitySelection(nextRaid, nextEntitySlug);
+      if (filterUrlSyncStarted) {
+        broadcastCurrentFilters();
+      }
+      return;
+    }
+    if (change.key !== "selectedBoss") return;
     const nextRaid = state.selectedRaid || "";
-    if (!nextRaid) {
+    const nextEntitySlug = state.selectedBoss || "";
+    if (!nextRaid || !nextEntitySlug) return;
+    if (
+      nextRaid === activeRaid &&
+      nextEntitySlug === activeEntitySlug &&
+      !activationInFlightPromise
+    ) {
       return;
     }
-    if (change.previousValue === nextRaid) {
-      return;
-    }
-    if (nextRaid === activeRaid && !activationInFlightPromise) {
-      return;
-    }
-
     logger.info(
-      `[ui-active] observed selectedRaid change in filter state: previous="${change.previousValue || ""}" next="${nextRaid}"`
+      `[ui-active] observed entity selection change: raid="${nextRaid}" entity="${nextEntitySlug}"`
     );
     updateFilterValue("selectedJobs", new Set());
-    requestRaidActivation(nextRaid, { source: "filter-state:selectedRaid" })
+    requestSelectionActivation(nextRaid, nextEntitySlug, {
+      source: `filter-state:${change.key}`,
+    })
       .then(() => {
         if (filterUrlSyncStarted) {
           broadcastCurrentFilters();
         }
       })
       .catch((error) => {
-        logger.error(`Failed to activate raid "${nextRaid}"`, error);
+        logger.error(
+          `Failed to activate selection "${nextRaid}::${nextEntitySlug}"`,
+          error
+        );
       });
   });
 }
@@ -486,6 +548,22 @@ function primeManifestRaidSelection(effectiveRaid) {
     setupViewSwitcher();
     chromeInitialized = true;
   }
+}
+
+function primeManifestEntitySelection(raid, preferredEntitySlug) {
+  const bossSelect = document.getElementById("boss-select");
+  if (!bossSelect || !manifestIndex) {
+    return;
+  }
+  const entities = manifestIndex.entitiesByRaid.get(raid) || [];
+  const entityValues = new Set(entities.map((entry) => entry.slug));
+  const entityLabels = Object.fromEntries(
+    entities.map((entry) => [entry.slug, entry.label])
+  );
+  populateDropdown(bossSelect, entityValues, "Boss", {
+    optionLabels: entityLabels,
+    preferredValue: preferredEntitySlug,
+  });
 }
 
 function syncLoadFailureMessage() {

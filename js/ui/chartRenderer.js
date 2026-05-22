@@ -7,6 +7,7 @@ import {
 } from "./valueDisplayUtils.js";
 import { getLogger } from "../shared/logging/logger.js";
 import { getWeekStartAnchor } from "../shared/weekStartConfig.js";
+import { rowMatchesSelectedEntity } from "../shared/entitySelection.js";
 const logger = getLogger("chartRenderer");
 
 // Shared layout margins so annotations can compensate for asymmetric spacing.
@@ -202,7 +203,9 @@ export function applyFilters(data, filters, expandPairs = false) {
     const entryJob = entry.job ?? entry.class;
     return (
       (!raid || entry.raid === raid) &&
-      (!boss || entry.boss === boss) &&
+      // Boss selection now doubles as an entity slug for phase-aware raids.
+      // Centralizing the match keeps legacy boss-label datasets working too.
+      rowMatchesSelectedEntity(entry, boss) &&
       (percentileFilter === null || entry.percentile === percentileFilter) &&
       namesToUse.includes(entryJob) &&
       (!dps_type || entry.dps_type === dps_type)
@@ -902,7 +905,7 @@ export function renderComparisonLineChart(
   data.forEach((row) => {
     const rowJob = row.job ?? row.class;
     if (!filters.raid || row.raid === filters.raid) {
-      if (!filters.boss || row.boss === filters.boss) {
+      if (rowMatchesSelectedEntity(row, filters.boss)) {
         if (!filters.dps_type || row.dps_type === filters.dps_type) {
           if (jobNamesToUse.includes(rowJob)) {
             matchedRowCount++;

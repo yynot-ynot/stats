@@ -3,11 +3,20 @@ import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("raidLoadScheduler");
 
 /**
- * Create a scheduler that prioritizes one raid's file set while still allowing
- * background warming of non-active raids at a fixed low concurrency.
+ * Create a scheduler that prioritizes one raid/entity file set while still
+ * allowing background warming of related entities and then other raids.
+ *
+ * Queue policy:
+ * 1. Finish the currently selected raid/entity group first.
+ * 2. Then warm sibling entities in that same raid.
+ * 3. Only after that spend capacity on unrelated raids.
+ *
+ * Any already in-flight file is allowed to finish; reprioritization only
+ * changes what the scheduler starts next.
  *
  * @param {Object} config
  * @param {Array<Object>} config.allFiles
+ * @param {Map<string, Array<Object>>} config.filesByGroup
  * @param {Map<string, Array<Object>>} config.filesByRaid
  * @param {(record: Object) => Promise<Array<Object>>} config.loadFile
  * @param {(record: Object, rows: Array<Object>) => void} config.onFileLoaded
@@ -18,6 +27,7 @@ const logger = getLogger("raidLoadScheduler");
 export function createRaidLoadScheduler(config) {
   const {
     allFiles,
+    filesByGroup,
     filesByRaid,
     loadFile,
     onFileLoaded,
@@ -35,36 +45,41 @@ export function createRaidLoadScheduler(config) {
     });
   });
 
+  let activeGroupKey = "";
   let activeRaid = "";
   let backgroundEnabled = false;
   let inFlight = 0;
-  const raidWaiters = new Map();
+  const groupWaiters = new Map();
 
   /**
-   * Raise the supplied raid to the front of the shared per-file queue and
-   * resolve once that raid's files have all reached a terminal state. Any
-   * already in-flight file is allowed to finish first, but later queue picks
-   * always favor the latest active raid.
+   * Raise the supplied raid/entity selection to the front of the shared queue
+   * and resolve once only that entity's files have all reached terminal state.
    *
-   * @param {string} raid
+   * Important nuance: any already in-flight file is allowed to finish first,
+   * but later queue picks always favor the latest active selection.
+   *
+   * @param {string} groupKey
    * @returns {Promise<void>}
    */
-  async function prioritizeRaid(raid) {
-    activeRaid = raid;
+  async function prioritizeSelection(groupKey) {
+    activeGroupKey = groupKey;
+    activeRaid = groupKey.split("::")[0] || "";
     logger.info(
-      `[ui-active] prioritize raid "${raid}"; waiting for ${countPendingFilesForRaid(
-        raid
+      `[ui-active] prioritize selection "${groupKey}"; waiting for ${countPendingFilesForGroup(
+        groupKey
       )} pending file(s) to reach terminal state`
     );
     pumpQueue();
-    await waitForRaidTerminal(raid);
-    const lane = raid === activeRaid ? "ui-active" : "background-cache";
-    logger.info(`[${lane}] raid "${raid}" load pass resolved`);
+    await waitForGroupTerminal(groupKey);
+    const lane = groupKey === activeGroupKey ? "ui-active" : "background-cache";
+    logger.info(`[${lane}] selection "${groupKey}" load pass resolved`);
   }
 
   /**
-   * Allow the scheduler to warm non-active raids after the first active raid
-   * becomes ready to use.
+   * Allow the scheduler to warm non-active work after the first active
+   * selection becomes usable. Background work still prefers sibling entities in
+   * the active raid before unrelated raids so the UI can offer nearby slices
+   * with less waiting.
    */
   function startBackgroundLoading() {
     backgroundEnabled = true;
@@ -75,29 +90,29 @@ export function createRaidLoadScheduler(config) {
   }
 
   /**
-   * Update the current active raid so later background picks skip it.
+   * Update the current active selection so later queue picks favor it.
+   * This does not cancel current network/file work; it only reprioritizes the
+   * next record chosen once capacity frees up.
    *
-   * @param {string} raid
+   * @param {string} groupKey
    */
-  function setActiveRaid(raid) {
-    if (activeRaid !== raid) {
-      logger.info(`[ui-active] scheduler target raid -> "${raid}"`);
+  function setActiveSelection(groupKey) {
+    if (activeGroupKey !== groupKey) {
+      logger.info(`[ui-active] scheduler target selection -> "${groupKey}"`);
     }
-    activeRaid = raid;
+    activeGroupKey = groupKey;
+    activeRaid = groupKey.split("::")[0] || "";
     pumpQueue();
   }
 
-  /**
-   * Expose read-only file state so tests and the controller can inspect load
-   * progress without mutating the scheduler.
-   *
-   * @param {string} filePath
-   * @returns {Object|undefined}
-   */
   function getFileState(filePath) {
     return fileStateByPath.get(filePath);
   }
 
+  /**
+   * Keep the worker slots full up to the configured concurrency while obeying
+   * the current selection priority rules.
+   */
   function pumpQueue() {
     while (inFlight < backgroundConcurrency) {
       const nextRecord = getNextRecord();
@@ -107,12 +122,17 @@ export function createRaidLoadScheduler(config) {
   }
 
   function getNextRecord() {
-    const activeRecord = getNextRecordForRaid(activeRaid);
+    const activeRecord = getNextRecordForGroup(activeGroupKey);
     if (activeRecord) {
       return activeRecord;
     }
     if (!backgroundEnabled) {
       return null;
+    }
+
+    const sameRaidRecord = getNextBackgroundRecordForActiveRaid();
+    if (sameRaidRecord) {
+      return sameRaidRecord;
     }
 
     for (const record of allFiles) {
@@ -128,9 +148,25 @@ export function createRaidLoadScheduler(config) {
     return null;
   }
 
-  function getNextRecordForRaid(raid) {
-    if (!raid) return null;
-    const files = filesByRaid.get(raid) || [];
+  function getNextBackgroundRecordForActiveRaid() {
+    if (!activeRaid) return null;
+    const files = filesByRaid.get(activeRaid) || [];
+    for (const record of files) {
+      if (record.groupKey === activeGroupKey) {
+        continue;
+      }
+      const state = fileStateByPath.get(record.path);
+      if (!isLoadableState(state)) {
+        continue;
+      }
+      return record;
+    }
+    return null;
+  }
+
+  function getNextRecordForGroup(groupKey) {
+    if (!groupKey) return null;
+    const files = filesByGroup.get(groupKey) || [];
     for (const record of files) {
       const state = fileStateByPath.get(record.path);
       if (!isLoadableState(state)) {
@@ -152,7 +188,7 @@ export function createRaidLoadScheduler(config) {
     const state = fileStateByPath.get(record.path);
     if (!state || state.promise || !isLoadableState(state)) return;
 
-    const lane = record.raid === activeRaid ? "active" : "background";
+    const lane = record.groupKey === activeGroupKey ? "active" : "background";
     inFlight += 1;
     state.attempts += 1;
     state.status = "loading";
@@ -169,37 +205,37 @@ export function createRaidLoadScheduler(config) {
         if (state.attempts < 2) {
           state.status = "queued";
           logger.warn(
-            `[${lane}] retry queued for ${record.path} (raid="${record.raid}", attempt=${state.attempts}, error=${error?.message || error})`
+            `[${lane}] retry queued for ${record.path} (selection="${record.groupKey}", attempt=${state.attempts}, error=${error?.message || error})`
           );
           return;
         }
         state.status = "failed";
         logger.warn(
-          `[${lane}] failed ${record.path} after ${state.attempts} attempt(s) (raid="${record.raid}", error=${error?.message || error})`
+          `[${lane}] failed ${record.path} after ${state.attempts} attempt(s) (selection="${record.groupKey}", error=${error?.message || error})`
         );
         onFileFailed(record, error);
       })
       .finally(() => {
         inFlight = Math.max(0, inFlight - 1);
-        notifyRaidWaiters(record.raid);
+        notifyGroupWaiters(record.groupKey);
         pumpQueue();
       });
   }
 
-  function waitForRaidTerminal(raid) {
-    if (isRaidTerminal(raid)) {
+  function waitForGroupTerminal(groupKey) {
+    if (isGroupTerminal(groupKey)) {
       return Promise.resolve();
     }
 
     return new Promise((resolve) => {
-      const waiters = raidWaiters.get(raid) || [];
+      const waiters = groupWaiters.get(groupKey) || [];
       waiters.push(resolve);
-      raidWaiters.set(raid, waiters);
+      groupWaiters.set(groupKey, waiters);
     });
   }
 
-  function isRaidTerminal(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function isGroupTerminal(groupKey) {
+    const files = filesByGroup.get(groupKey) || [];
     if (files.length === 0) {
       return true;
     }
@@ -210,33 +246,33 @@ export function createRaidLoadScheduler(config) {
     });
   }
 
-  function notifyRaidWaiters(raid) {
-    if (!isRaidTerminal(raid)) {
+  function notifyGroupWaiters(groupKey) {
+    if (!isGroupTerminal(groupKey)) {
       return;
     }
-    const { total, loaded, failed } = summarizeRaidState(raid);
-    const lane = raid === activeRaid ? "ui-active" : "background-cache";
+    const { total, loaded, failed } = summarizeGroupState(groupKey);
+    const lane = groupKey === activeGroupKey ? "ui-active" : "background-cache";
     logger.info(
-      `[${lane}] raid "${raid}" reached terminal state (loaded=${loaded}, failed=${failed}, total=${total})`
+      `[${lane}] selection "${groupKey}" reached terminal state (loaded=${loaded}, failed=${failed}, total=${total})`
     );
-    const waiters = raidWaiters.get(raid);
+    const waiters = groupWaiters.get(groupKey);
     if (!waiters?.length) {
       return;
     }
-    raidWaiters.delete(raid);
+    groupWaiters.delete(groupKey);
     waiters.forEach((resolve) => resolve());
   }
 
-  function countPendingFilesForRaid(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function countPendingFilesForGroup(groupKey) {
+    const files = filesByGroup.get(groupKey) || [];
     return files.filter((record) => {
       const state = fileStateByPath.get(record.path);
       return state?.status !== "loaded" && state?.status !== "failed";
     }).length;
   }
 
-  function summarizeRaidState(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function summarizeGroupState(groupKey) {
+    const files = filesByGroup.get(groupKey) || [];
     let loaded = 0;
     let failed = 0;
     files.forEach((record) => {
@@ -255,8 +291,8 @@ export function createRaidLoadScheduler(config) {
   }
 
   return {
-    prioritizeRaid,
-    setActiveRaid,
+    prioritizeSelection,
+    setActiveSelection,
     startBackgroundLoading,
     getFileState,
   };
