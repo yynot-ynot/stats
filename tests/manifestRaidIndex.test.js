@@ -105,3 +105,21 @@ test("buildManifestRaidIndex groups files by raid and independently loadable ent
     "whole-fight"
   );
 });
+
+test("resolveEffectiveEntitySlug prefers a named entity over a legacy blank bucket", () => {
+  const manifestIndex = buildManifestRaidIndex([
+    "json/20260502_trials-iii-extreme_dps.json.gz",
+    "json/20260502_trials-iii-extreme_healing.json.gz",
+    "json/20260502_trials-iii-extreme_doomtrain_dps.json.gz",
+    "json/20260502_trials-iii-extreme_doomtrain_healing.json.gz",
+  ]);
+
+  assert.deepEqual(manifestIndex.entitiesByRaid.get("Trials III (Extreme)"), [
+    { slug: "doomtrain", label: "Doomtrain" },
+    { slug: "", label: "All Bosses" },
+  ]);
+  assert.equal(
+    resolveEffectiveEntitySlug(manifestIndex, "Trials III (Extreme)", ""),
+    "doomtrain"
+  );
+});

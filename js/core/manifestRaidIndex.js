@@ -114,6 +114,8 @@ export function buildManifestRaidIndex(filePaths) {
     entities.sort((a, b) => {
       if (a.slug === "whole-fight") return -1;
       if (b.slug === "whole-fight") return 1;
+      if (!a.slug) return 1;
+      if (!b.slug) return -1;
       return a.label.localeCompare(b.label);
     });
     entitiesByRaid.set(raid, entities);
@@ -176,6 +178,10 @@ export function resolveEffectiveEntitySlug(
   const wholeFight = entities.find((entry) => entry.slug === "whole-fight");
   if (wholeFight) {
     return wholeFight.slug;
+  }
+  const firstNamedEntity = entities.find((entry) => entry.slug);
+  if (firstNamedEntity) {
+    return firstNamedEntity.slug;
   }
   return entities[0]?.slug || "";
 }
@@ -264,7 +270,7 @@ function resolveEntitySlug(slugSegment, raidSlug) {
  */
 function entityLabelFromSlug(entitySlug) {
   if (!entitySlug) {
-    return "";
+    return "All Bosses";
   }
   if (entitySlug === "whole-fight") {
     return "Whole Fight";

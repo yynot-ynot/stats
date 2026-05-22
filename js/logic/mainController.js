@@ -8,7 +8,6 @@ import {
 import {
   buildManifestRaidIndex,
   buildRaidEntityKey,
-  getManifestFilesForSelection,
   resolveEffectiveEntitySlug,
   resolveEffectiveRaid,
 } from "../core/manifestRaidIndex.js";
@@ -140,6 +139,9 @@ export async function init() {
       effectiveRaid,
       initialFiltersFromUrl.selectedBoss
     );
+    logger.info(
+      `[ui-active] resolved startup entity "${effectiveEntitySlug}" for raid "${effectiveRaid}"`
+    );
     primeManifestEntitySelection(effectiveRaid, effectiveEntitySlug);
     await requestSelectionActivation(effectiveRaid, effectiveEntitySlug, {
       source: "startup",
@@ -183,7 +185,6 @@ export async function init() {
  */
 async function activateSelection(raid, entitySlug, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
-  if (!entitySlug) return;
 
   const { source = "unknown", applyUrlFilters = false, urlFilters = null } = options;
   const groupKey = buildRaidEntityKey(raid, entitySlug);
@@ -287,7 +288,7 @@ async function activateSelection(raid, entitySlug, options = {}) {
  * @returns {Promise<void>}
  */
 function requestSelectionActivation(raid, entitySlug, options = {}) {
-  if (!raid || !entitySlug || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
+  if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
     return Promise.resolve();
   }
   const groupKey = buildRaidEntityKey(raid, entitySlug);
@@ -498,7 +499,7 @@ function ensureSelectionChangeListeners() {
     if (change.key !== "selectedBoss") return;
     const nextRaid = state.selectedRaid || "";
     const nextEntitySlug = state.selectedBoss || "";
-    if (!nextRaid || !nextEntitySlug) return;
+    if (!nextRaid) return;
     if (
       nextRaid === activeRaid &&
       nextEntitySlug === activeEntitySlug &&
