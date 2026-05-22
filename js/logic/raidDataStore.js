@@ -1,44 +1,27 @@
 /**
- * Create a per-entity data store that holds row blobs and terminal file state
- * for each independently loadable raid/entity selection.
+ * Create a per-raid data store that holds row blobs and terminal file state for
+ * each raid. The controller treats a raid as ready once every file for that
+ * raid has either loaded or failed after retry.
  *
- * @param {Map<string, Array<Object>>} filesByGroup
+ * @param {Map<string, Array<Object>>} filesByRaid
  * @returns {Object}
  */
-export function createRaidDataStore(filesByGroup) {
-  const groups = new Map();
+export function createRaidDataStore(filesByRaid) {
+  const raids = new Map();
 
-  Array.from(filesByGroup.keys()).forEach((groupKey) => {
-    groups.set(groupKey, createGroupRecord(groupKey, filesByGroup.get(groupKey) || []));
+  Array.from(filesByRaid.keys()).forEach((raid) => {
+    raids.set(raid, createRaidRecord(raid, filesByRaid.get(raid) || []));
   });
 
-  /**
-   * Ensure the store always has a record for the requested entity group, even
-   * if callers ask about it before any file transitions have happened.
-   *
-   * @param {string} groupKey
-   * @returns {Object}
-   */
-  function ensureGroup(groupKey) {
-    if (!groups.has(groupKey)) {
-      groups.set(groupKey, createGroupRecord(groupKey, []));
+  function ensureRaid(raid) {
+    if (!raids.has(raid)) {
+      raids.set(raid, createRaidRecord(raid, []));
     }
-    return groups.get(groupKey);
+    return raids.get(raid);
   }
 
-  /**
-   * Append one file's decompressed rows into the owning entity group.
-   *
-   * Files are idempotent at the path level so duplicate load callbacks cannot
-   * double-count rows if retries or repeated signals occur.
-   *
-   * @param {string} groupKey
-   * @param {string} filePath
-   * @param {Array<Object>} rows
-   * @returns {Object}
-   */
-  function appendFileRows(groupKey, filePath, rows) {
-    const record = ensureGroup(groupKey);
+  function appendFileRows(raid, filePath, rows) {
+    const record = ensureRaid(raid);
     if (record.loadedFiles.has(filePath)) return record;
 
     record.rows.push(...rows);
@@ -48,75 +31,40 @@ export function createRaidDataStore(filesByGroup) {
     return record;
   }
 
-  /**
-   * Mark one file as terminally failed while preserving any rows already loaded
-   * from sibling files in the same entity group.
-   *
-   * @param {string} groupKey
-   * @param {string} filePath
-   * @param {Error} error
-   * @returns {Object}
-   */
-  function markFileFailed(groupKey, filePath, error) {
-    const record = ensureGroup(groupKey);
+  function markFileFailed(raid, filePath, error) {
+    const record = ensureRaid(raid);
     record.failedFiles.set(filePath, error);
     record.terminalFiles.add(filePath);
     refreshStatus(record);
     return record;
   }
 
-  /**
-   * Surface that the controller has begun waiting on this entity group.
-   *
-   * @param {string} groupKey
-   * @returns {Object}
-   */
-  function markGroupLoading(groupKey) {
-    const record = ensureGroup(groupKey);
+  function markRaidLoading(raid) {
+    const record = ensureRaid(raid);
     record.status = "loading";
     return record;
   }
 
-  /**
-   * Return a defensive copy so callers can derive UI state without mutating the
-   * canonical row cache.
-   *
-   * @param {string} groupKey
-   * @returns {Array<Object>}
-   */
-  function getGroupRows(groupKey) {
-    return ensureGroup(groupKey).rows.slice();
+  function getRaidRows(raid) {
+    return ensureRaid(raid).rows.slice();
   }
 
-  /**
-   * Expose the bookkeeping record for tests and controller diagnostics.
-   *
-   * @param {string} groupKey
-   * @returns {Object}
-   */
-  function getGroupRecord(groupKey) {
-    return ensureGroup(groupKey);
+  function getRaidRecord(raid) {
+    return ensureRaid(raid);
   }
 
   return {
     appendFileRows,
     markFileFailed,
-    markGroupLoading,
-    getGroupRows,
-    getGroupRecord,
+    markRaidLoading,
+    getRaidRows,
+    getRaidRecord,
   };
 }
 
-/**
- * Build the mutable bookkeeping record used for one raid/entity selection.
- *
- * @param {string} groupKey
- * @param {Array<Object>} files
- * @returns {Object}
- */
-function createGroupRecord(groupKey, files) {
+function createRaidRecord(raid, files) {
   return {
-    groupKey,
+    raid,
     expectedFiles: new Set(files.map((file) => file.path)),
     terminalFiles: new Set(),
     loadedFiles: new Set(),
@@ -126,14 +74,6 @@ function createGroupRecord(groupKey, files) {
   };
 }
 
-/**
- * Collapse file-level terminal state into the coarse store status used by the
- * controller. A group is "ready" once every expected file either loaded or
- * failed, because the UI can render partial data and surface failures
- * separately.
- *
- * @param {Object} record
- */
 function refreshStatus(record) {
   if (record.terminalFiles.size === 0) {
     record.status = "loading";

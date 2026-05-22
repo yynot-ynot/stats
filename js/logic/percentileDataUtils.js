@@ -1,5 +1,4 @@
 import { getLogger } from "../shared/logging/logger.js";
-import { rowMatchesSelectedEntity } from "../shared/entitySelection.js";
 
 const logger = getLogger("percentileDataUtils");
 
@@ -32,9 +31,7 @@ export function buildPercentileSeries(
     if (!jobName) return false;
     if (jobFilter && !jobFilter.has(jobName)) return false;
     if (filters?.raid && row.raid !== filters.raid) return false;
-    // Percentile charts should honor entity slug selections while still
-    // accepting legacy boss-label-only payloads during rollout.
-    if (!rowMatchesSelectedEntity(row, filters?.boss)) return false;
+    if (filters?.boss && row.boss !== filters.boss) return false;
     if (filters?.dps_type && row.dps_type !== filters.dps_type) return false;
     const percentileValue = Number(row.percentile);
     // Ignore 0th percentile rows so the percentile view charts and scaling skip them entirely,
@@ -118,7 +115,7 @@ export function collectAvailableDates(data, filters = {}) {
   data.forEach((row) => {
     if (!row?.date) return;
     if (raid && row.raid !== raid) return;
-    if (!rowMatchesSelectedEntity(row, boss)) return;
+    if (boss && row.boss !== boss) return;
     dateSet.add(row.date);
   });
   return Array.from(dateSet).sort();

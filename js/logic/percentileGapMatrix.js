@@ -1,7 +1,6 @@
 import { getLogger } from "../shared/logging/logger.js";
 import { JOB_GROUPS } from "../config/appConfig.js";
 import { parsePairedHealerJobs } from "../ui/jobSidebarManager.js";
-import { rowMatchesSelectedEntity } from "../shared/entitySelection.js";
 
 const logger = getLogger("percentileGapMatrix");
 
@@ -147,9 +146,7 @@ function buildCachedJobMap({ data, filters, expandedJobs, valueKey }) {
     const jobName = row.job ?? row.class;
     if (!jobName || !allowedJobs.has(jobName)) return;
     if (filters?.raid && row.raid !== filters.raid) return;
-    // The matrix shares the same entity-aware selection semantics as the line
-    // charts so whole-fight and phase slices stay consistent across views.
-    if (!rowMatchesSelectedEntity(row, filters?.boss)) return;
+    if (filters?.boss && row.boss !== filters.boss) return;
     if (filters?.dps_type && row.dps_type !== filters.dps_type) return;
     if (!row.date) return;
 
