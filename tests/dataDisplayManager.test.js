@@ -97,6 +97,9 @@ test("toggleTrendViewVisibility hides trend sections until jobs exist", () => {
 
   const originalDocument = global.document;
   global.document = {
+    body: {
+      dataset: {},
+    },
     getElementById(id) {
       switch (id) {
         case "trend-view-placeholder":
@@ -163,6 +166,9 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
 
   const originalDocument = global.document;
   global.document = {
+    body: {
+      dataset: {},
+    },
     getElementById(id) {
       switch (id) {
         case "trend-view-placeholder":
@@ -206,6 +212,73 @@ test("toggleTrendViewVisibility reveals trend sections after job selection", () 
     assert.ok(!comparisonMsg.classList.contains("view-hidden"));
     assert.ok(!parseTotal.classList.contains("view-hidden"));
     assert.ok(!parseDelta.classList.contains("view-hidden"));
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test("toggleTrendViewVisibility suppresses the job prompt while a new target is loading", () => {
+  const placeholder = { style: {}, textContent: "" };
+  const slider = createElementWithClassList();
+  const dps = createElementWithClassList();
+  const hps = createElementWithClassList();
+  const reference = createElementWithClassList();
+  const comparison = createElementWithClassList();
+  const dpsComp = createElementWithClassList();
+  const hpsComp = createElementWithClassList();
+  const comparisonMsg = createElementWithClassList();
+  const parseTotal = createElementWithClassList();
+  const parseDelta = createElementWithClassList();
+
+  const originalDocument = global.document;
+  global.document = {
+    body: {
+      dataset: {
+        appLoading: "true",
+      },
+    },
+    getElementById(id) {
+      switch (id) {
+        case "trend-view-placeholder":
+          return placeholder;
+        case "percentile-slider-container":
+          return slider;
+        case "dps-plot-container":
+          return dps;
+        case "healing-plot-container":
+          return hps;
+        case "reference-percentile-container":
+          return reference;
+        case "comparison-slider-container":
+          return comparison;
+        case "dps-comparison-plot-container":
+          return dpsComp;
+        case "healing-comparison-plot-container":
+          return hpsComp;
+        case "comparison-message":
+          return comparisonMsg;
+        case "parse-total-plot-container":
+          return parseTotal;
+        case "parse-delta-plot-container":
+          return parseDelta;
+        default:
+          return null;
+      }
+    },
+  };
+
+  try {
+    toggleTrendViewVisibility(false);
+    assert.equal(
+      placeholder.style.display,
+      "none",
+      "loading banner should suppress the generic job-selection prompt"
+    );
+    assert.equal(
+      placeholder.textContent,
+      "",
+      "loading-state suppression should not overwrite placeholder copy"
+    );
   } finally {
     global.document = originalDocument;
   }

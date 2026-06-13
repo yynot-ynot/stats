@@ -19,6 +19,8 @@ const logger = getLogger("filterControls");
 // Module-level cache storing every boss option and the raid -> bosses lookup to support dependent dropdowns.
 let bossIndexCache = {
   bossesByRaid: {},
+  manifestBossesByRaid: {},
+  manifestBossLatestDatesByRaid: {},
   allBosses: new Set(),
 };
 
@@ -28,6 +30,34 @@ export function __setBossIndexCacheForTests(cache) {
 
 export function __getBossIndexCacheForTests() {
   return bossIndexCache;
+}
+
+/**
+ * Seed manifest-derived boss options so boss-scoped families can expose their
+ * full boss catalog before every row payload for that raid has loaded.
+ *
+ * @param {Object<string, Iterable<string>>} bossValuesByRaid
+ * @param {Object<string, Object<string, string>>} [bossLatestDatesByRaid]
+ */
+export function setManifestBossOptionsByRaid(
+  bossValuesByRaid = {},
+  bossLatestDatesByRaid = {}
+) {
+  const manifestBossesByRaid = {};
+  const allBosses = new Set(bossIndexCache.allBosses);
+
+  Object.entries(bossValuesByRaid).forEach(([raid, bosses]) => {
+    const values = Array.from(bosses || []).filter(Boolean);
+    manifestBossesByRaid[raid] = new Set(values);
+    values.forEach((boss) => allBosses.add(boss));
+  });
+
+  bossIndexCache = {
+    ...bossIndexCache,
+    manifestBossesByRaid,
+    manifestBossLatestDatesByRaid: bossLatestDatesByRaid,
+    allBosses,
+  };
 }
 
 // Stable top-level ordering for the grouped raid menu. Known raid families should
@@ -62,6 +92,13 @@ export function sortDropdownValues(values, selectId, latestDateMap) {
       if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
       if (aIndex !== -1) return -1;
       if (bIndex !== -1) return 1;
+      if (latestDateMap) {
+        const dateA = latestDateMap?.[a] ?? "";
+        const dateB = latestDateMap?.[b] ?? "";
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA);
+        }
+      }
       return a.localeCompare(b);
     });
   } else if (latestDateMap) {
@@ -265,16 +302,22 @@ export function setupHeaderBindings() {
  * to the top, while other dropdowns rely on alphabetical or explicit overrides as appropriate.
  *
  * @param {Array<Object>} data - Array of loaded entries for the active raid.
- * @param {Object} [options]
- * @param {Iterable<string>} [options.raidValues] - Manifest-derived raid options that should remain available even when only one raid's rows are loaded.
- * @param {Object<string, string>} [options.raidLatestDates] - Manifest-derived latest dates for raid sorting.
- * @param {string} [options.preferredRaid] - Raid that should remain selected after repopulation.
- */
+  * @param {Object} [options]
+  * @param {Iterable<string>} [options.raidValues] - Manifest-derived raid options that should remain available even when only one raid's rows are loaded.
+  * @param {Object<string, string>} [options.raidLatestDates] - Manifest-derived latest dates for raid sorting.
+  * @param {string} [options.preferredRaid] - Raid that should remain selected after repopulation.
+  * @param {Object<string, Iterable<string>>} [options.bossValuesByRaid] - Manifest-derived boss options keyed by raid for boss-scoped families.
+  * @param {Object<string, Object<string, string>>} [options.bossLatestDatesByRaid] - Manifest-derived latest dates per boss label for boss-scoped families.
+  * @param {string} [options.preferredBoss] - Boss that should remain selected after repopulation.
+  */
 export function populateAllFilters(data, options = {}) {
   const {
     raidValues,
     raidLatestDates,
     preferredRaid,
+    bossValuesByRaid,
+    bossLatestDatesByRaid,
+    preferredBoss,
   } = options;
 
   // Track each raid's most recent date so the dropdown can surface the newest content first.
@@ -287,7 +330,14 @@ export function populateAllFilters(data, options = {}) {
     }
   });
 
-  bossIndexCache = buildBossIndex(data);
+  bossIndexCache = {
+    ...buildBossIndex(data),
+    manifestBossesByRaid: {},
+    manifestBossLatestDatesByRaid: {},
+  };
+  if (bossValuesByRaid) {
+    setManifestBossOptionsByRaid(bossValuesByRaid, bossLatestDatesByRaid);
+  }
 
   const raids = raidValues ? new Set(raidValues) : new Set(data.map((d) => d.raid));
   const bosses = bossIndexCache.allBosses;
@@ -301,7 +351,9 @@ export function populateAllFilters(data, options = {}) {
     latestDateMap: raidLatestDates || derivedRaidLatestDates,
     preferredValue: preferredRaid || filterState.selectedRaid,
   });
-  populateDropdown(document.getElementById("boss-select"), bosses, "Boss");
+  populateDropdown(document.getElementById("boss-select"), bosses, "Boss", {
+    preferredValue: preferredBoss || filterState.selectedBoss,
+  });
   setupRaidBossFiltering();
 
   setupPercentileSlider(percentiles);
@@ -433,15 +485,34 @@ function classifyRaidDropdownSection(raid) {
 }
 
 /**
- * Retrieve the boss Set for the provided raid, falling back to the full catalog if no raid is selected.
+ * Retrieve the boss Set for the provided raid. Boss-scoped families can source
+ * their options directly from manifest metadata, while row-driven raids only
+ * expose bosses that are already present in the currently loaded dataset. Once
+ * a raid is explicitly selected we should never fall back to a previous raid's
+ * boss catalog, because that leaks stale boss labels into the new loading state.
+ *
  * @param {string} raid - Current raid selection.
  * @returns {Set<string>} Boss option set for dropdown population.
  */
 function getBossSetForRaid(raid) {
-  if (raid && bossIndexCache.bossesByRaid[raid]) {
-    return bossIndexCache.bossesByRaid[raid];
+  if (raid) {
+    const rowBosses = bossIndexCache.bossesByRaid[raid] || new Set();
+    const manifestBosses =
+      bossIndexCache.manifestBossesByRaid?.[raid] || new Set();
+    const mergedBosses = new Set([
+      ...Array.from(manifestBosses),
+      ...Array.from(rowBosses),
+    ]);
+    if (mergedBosses.size > 0) {
+      return mergedBosses;
+    }
+    return new Set();
   }
   return bossIndexCache.allBosses;
+}
+
+function getBossLatestDateMapForRaid(raid) {
+  return bossIndexCache.manifestBossLatestDatesByRaid?.[raid] || null;
 }
 
 /**
@@ -457,12 +528,19 @@ export function setupRaidBossFiltering() {
 
   const applyBossFilter = () => {
     const bossesForRaid = getBossSetForRaid(raidSelect.value);
+    const latestDateMap = getBossLatestDateMapForRaid(raidSelect.value);
     // Preserve the previously selected boss if it still exists in the filtered set.
     const preferredBoss =
       filterState.selectedBoss && bossesForRaid.has(filterState.selectedBoss)
         ? filterState.selectedBoss
         : null;
-    populateDropdown(bossSelect, bossesForRaid, "Boss");
+    populateDropdown(bossSelect, bossesForRaid, "Boss", {
+      latestDateMap,
+      // Keep the dropdown pinned to the already-selected boss when it remains
+      // valid for the active raid. Without this, boss-scoped families can
+      // briefly fall back to the newest boss and fire a stale activation.
+      preferredValue: preferredBoss || undefined,
+    });
 
     if (preferredBoss) {
       const hasPreferredOption = Array.from(bossSelect.options).some(

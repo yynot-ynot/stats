@@ -8,6 +8,7 @@ import {
   setupHeaderBindings,
   __setBossIndexCacheForTests,
   __getBossIndexCacheForTests,
+  setManifestBossOptionsByRaid,
 } from "../js/ui/filterControls.js";
 import { filterState, updateFilterValue } from "../js/shared/filterState.js";
 import { parseFilterStateFromUrl } from "../js/shared/urlState.js";
@@ -419,4 +420,303 @@ test("setupHeaderBindings keeps the raid selector interactive before boss data e
       "boss selector should remain non-interactive until row data populates boss choices"
     );
   });
+});
+
+test("setupRaidBossFiltering can surface manifest-derived boss options before row data loads", () => {
+  const raidSelect = createMockSelect("raid-select");
+  raidSelect.value = "Trials III (Extreme)";
+  const bossSelect = createMockSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {},
+    manifestBossesByRaid: {},
+    allBosses: new Set(),
+  });
+  setManifestBossOptionsByRaid({
+    "Trials III (Extreme)": ["Enuo", "Doomtrain"],
+  });
+
+  const originalBoss = filterState.selectedBoss;
+  filterState.selectedBoss = "";
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.deepEqual(
+      bossSelect.options.map((opt) => opt.value),
+      ["Doomtrain", "Enuo"]
+    );
+    assert.equal(filterState.selectedBoss, "Doomtrain");
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
+});
+
+test("setupRaidBossFiltering does not briefly switch to the newest Trial boss when a preferred boss is already selected", () => {
+  const raidSelect = createMockSelect("raid-select");
+  raidSelect.value = "Trials III (Extreme)";
+  const bossSelect = createMockSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+  const originalBoss = filterState.selectedBoss;
+  const originalListeners = filterState.listeners;
+  const selectedBossChanges = [];
+
+  filterState.selectedBoss = "Doomtrain";
+  filterState.listeners = new Set([
+    (_, change) => {
+      if (change?.key === "selectedBoss") {
+        selectedBossChanges.push(change.nextValue);
+      }
+    },
+  ]);
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {},
+    manifestBossesByRaid: {
+      "Trials III (Extreme)": new Set(["Enuo", "Doomtrain"]),
+    },
+    manifestBossLatestDatesByRaid: {
+      "Trials III (Extreme)": {
+        Enuo: "20260608",
+        Doomtrain: "20260107",
+      },
+    },
+    allBosses: new Set(["Enuo", "Doomtrain"]),
+  });
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.equal(filterState.selectedBoss, "Doomtrain");
+    assert.equal(
+      selectedBossChanges.includes("Enuo"),
+      false,
+      "boss repopulation should not emit a transient switch to the newest Trial boss"
+    );
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    filterState.listeners = originalListeners;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
+});
+
+test("setupRaidBossFiltering clears stale Trial bosses immediately when switching to a row-driven raid with no loaded boss data yet", () => {
+  const raidSelect = createMockSelect("raid-select");
+  raidSelect.value = "AAC Heavyweight";
+  const bossSelect = createMockSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+  const originalBoss = filterState.selectedBoss;
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {
+      "Trials III (Extreme)": new Set(["Doomtrain", "Enuo"]),
+    },
+    manifestBossesByRaid: {
+      "Trials III (Extreme)": new Set(["Enuo", "Doomtrain"]),
+    },
+    manifestBossLatestDatesByRaid: {
+      "Trials III (Extreme)": {
+        Enuo: "20260608",
+        Doomtrain: "20260107",
+      },
+    },
+    allBosses: new Set(["Doomtrain", "Enuo"]),
+  });
+  filterState.selectedBoss = "Doomtrain";
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.equal(
+      filterState.selectedBoss,
+      "",
+      "row-driven raids should clear the previous raid's boss immediately when no boss is known yet"
+    );
+    assert.equal(
+      bossTitle.textContent,
+      "[Select Boss]",
+      "row-driven raids should show the boss placeholder instead of stale Trial text while loading"
+    );
+    assert.deepEqual(
+      bossSelect.options.map((opt) => opt.value),
+      [],
+      "boss dropdown should not inherit stale Trial boss options for the new raid"
+    );
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
+});
+
+test("setupRaidBossFiltering immediately swaps from a row-driven placeholder to the manifest default when the user changes into Trial", () => {
+  const raidSelect = createInteractiveSelect("raid-select", [
+    "AAC Heavyweight",
+    "Trials III (Extreme)",
+  ]);
+  raidSelect.value = "AAC Heavyweight";
+  const bossSelect = createInteractiveSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+  const originalBoss = filterState.selectedBoss;
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {},
+    manifestBossesByRaid: {
+      "Trials III (Extreme)": new Set(["Enuo", "Doomtrain"]),
+    },
+    manifestBossLatestDatesByRaid: {
+      "Trials III (Extreme)": {
+        Enuo: "20260608",
+        Doomtrain: "20260107",
+      },
+    },
+    allBosses: new Set(["Enuo", "Doomtrain"]),
+  });
+  filterState.selectedBoss = "Doomtrain";
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.equal(
+      bossTitle.textContent,
+      "[Select Boss]",
+      "row-driven raids should clear the stale boss header before any Trial boss becomes active"
+    );
+    assert.equal(filterState.selectedBoss, "");
+
+    raidSelect.value = "Trials III (Extreme)";
+    raidSelect.dispatchEvent(new Event("change"));
+
+    assert.equal(
+      filterState.selectedBoss,
+      "Enuo",
+      "Trial should immediately adopt the manifest-derived default boss on raid change"
+    );
+    assert.equal(
+      bossTitle.textContent,
+      "Enuo",
+      "the boss header should show the manifest-derived default during loading"
+    );
+    assert.deepEqual(bossSelect.options.map((opt) => opt.value), [
+      "Enuo",
+      "Doomtrain",
+    ]);
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
+});
+
+test("setupRaidBossFiltering immediately shows the manifest-derived default boss for boss-scoped raids", () => {
+  const raidSelect = createMockSelect("raid-select");
+  raidSelect.value = "Trials III (Extreme)";
+  const bossSelect = createMockSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+  const originalBoss = filterState.selectedBoss;
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {},
+    manifestBossesByRaid: {
+      "Trials III (Extreme)": new Set(["Enuo", "Doomtrain"]),
+    },
+    manifestBossLatestDatesByRaid: {
+      "Trials III (Extreme)": {
+        Enuo: "20260608",
+        Doomtrain: "20260107",
+      },
+    },
+    allBosses: new Set(["Enuo", "Doomtrain"]),
+  });
+  filterState.selectedBoss = "";
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.equal(filterState.selectedBoss, "Enuo");
+    assert.equal(bossTitle.textContent, "Enuo");
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
 });

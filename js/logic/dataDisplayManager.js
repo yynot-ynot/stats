@@ -522,6 +522,9 @@ function formatSet(value) {
  * Toggle the main trend view slider/chart sections based on whether a job selection exists.
  * Hides all trend-only DOM nodes and surfaces a placeholder prompt when no jobs are selected,
  * ensuring the initial load guides the user to pick jobs before interacting with sliders.
+ * When the controller marks the app as actively loading a new raid/boss target,
+ * the loading banner owns the empty-state messaging and this helper must not
+ * reintroduce the generic job-selection prompt underneath it.
  * @param {boolean} hasJobSelection
  * @param {Object} [options]
  * @param {boolean} [options.preserveParseScaleVisibility=false] - Skip hiding the parse-scale toggle during scale-only rerenders.
@@ -532,6 +535,7 @@ export function toggleTrendViewVisibility(hasJobSelection, options = {}) {
   const parseScaleContainer = document.getElementById(
     "parse-delta-scale-container"
   );
+  const isAppLoading = Boolean(document?.body?.dataset?.appLoading);
   const targets = TREND_VIEW_SECTION_IDS.map((id) =>
     document.getElementById(id)
   ).filter(Boolean);
@@ -548,8 +552,12 @@ export function toggleTrendViewVisibility(hasJobSelection, options = {}) {
     targets.forEach((node) => node.classList.add("view-hidden"));
     if (parseScaleContainer) parseScaleContainer.classList.add("view-hidden");
     if (placeholder) {
-      placeholder.textContent = JOB_SELECTION_PROMPT;
-      placeholder.style.display = "";
+      if (isAppLoading) {
+        placeholder.style.display = "none";
+      } else {
+        placeholder.textContent = JOB_SELECTION_PROMPT;
+        placeholder.style.display = "";
+      }
     }
   }
 }

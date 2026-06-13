@@ -3,12 +3,18 @@ import { getLogger } from "../shared/logging/logger.js";
 const logger = getLogger("raidLoadScheduler");
 
 /**
- * Create a scheduler that prioritizes one raid's file set while still allowing
- * background warming of non-active raids at a fixed low concurrency.
+ * Create a scheduler that prioritizes one load target at a time while still
+ * allowing background warming of sibling targets and unrelated raids at a fixed
+ * low concurrency. The public API keeps the legacy `raid` method names as
+ * aliases so existing call sites and tests continue to work.
  *
  * @param {Object} config
  * @param {Array<Object>} config.allFiles
- * @param {Map<string, Array<Object>>} config.filesByRaid
+ * @param {Map<string, Array<Object>>} [config.filesByLoadTarget]
+ * @param {Map<string, Array<Object>>} [config.filesByTarget]
+ * @param {Map<string, Array<Object>>} [config.filesByRaid]
+ * @param {Map<string, Array<string>>} [config.loadTargetsByRaid]
+ * @param {Map<string, Object>} [config.targetMetadataByKey]
  * @param {(record: Object) => Promise<Array<Object>>} config.loadFile
  * @param {(record: Object, rows: Array<Object>) => void} config.onFileLoaded
  * @param {(record: Object, error: Error) => void} config.onFileFailed
@@ -18,12 +24,23 @@ const logger = getLogger("raidLoadScheduler");
 export function createRaidLoadScheduler(config) {
   const {
     allFiles,
+    filesByLoadTarget,
+    filesByTarget,
     filesByRaid,
+    loadTargetsByRaid,
+    targetMetadataByKey,
     loadFile,
     onFileLoaded,
     onFileFailed,
     backgroundConcurrency = 2,
   } = config;
+
+  const targetFiles = filesByLoadTarget || filesByTarget || filesByRaid;
+  const targetRaidMap =
+    targetMetadataByKey ||
+    buildFallbackTargetMetadata(targetFiles, loadTargetsByRaid || new Map());
+  const targetsByRaid =
+    loadTargetsByRaid || buildFallbackTargetsByRaid(targetFiles, targetRaidMap);
 
   const fileStateByPath = new Map();
   allFiles.forEach((record) => {
@@ -35,36 +52,47 @@ export function createRaidLoadScheduler(config) {
     });
   });
 
-  let activeRaid = "";
+  let activeTarget = "";
   let backgroundEnabled = false;
   let inFlight = 0;
-  const raidWaiters = new Map();
+  const targetWaiters = new Map();
 
   /**
-   * Raise the supplied raid to the front of the shared per-file queue and
-   * resolve once that raid's files have all reached a terminal state. Any
+   * Raise the supplied load target to the front of the shared per-file queue
+   * and resolve once that target's files have all reached terminal state. Any
    * already in-flight file is allowed to finish first, but later queue picks
-   * always favor the latest active raid.
+   * always favor the latest active target.
+   *
+   * @param {string} target
+   * @returns {Promise<void>}
+   */
+  async function prioritizeTarget(target) {
+    activeTarget = target;
+    logger.info(
+      `[ui-active] prioritize target "${target}"; waiting for ${countPendingFilesForTarget(
+        target
+      )} pending file(s) to reach terminal state`
+    );
+    pumpQueue();
+    await waitForTargetTerminal(target);
+    const lane = target === activeTarget ? "ui-active" : "background-cache";
+    logger.info(`[${lane}] target "${target}" load pass resolved`);
+  }
+
+  /**
+   * Backwards-compatible alias retained for the legacy raid-scoped tests and
+   * non-boss load paths.
    *
    * @param {string} raid
    * @returns {Promise<void>}
    */
-  async function prioritizeRaid(raid) {
-    activeRaid = raid;
-    logger.info(
-      `[ui-active] prioritize raid "${raid}"; waiting for ${countPendingFilesForRaid(
-        raid
-      )} pending file(s) to reach terminal state`
-    );
-    pumpQueue();
-    await waitForRaidTerminal(raid);
-    const lane = raid === activeRaid ? "ui-active" : "background-cache";
-    logger.info(`[${lane}] raid "${raid}" load pass resolved`);
+  function prioritizeRaid(raid) {
+    return prioritizeTarget(raid);
   }
 
   /**
-   * Allow the scheduler to warm non-active raids after the first active raid
-   * becomes ready to use.
+   * Allow the scheduler to warm non-active targets after the first active load
+   * target becomes ready to use.
    */
   function startBackgroundLoading() {
     backgroundEnabled = true;
@@ -75,16 +103,26 @@ export function createRaidLoadScheduler(config) {
   }
 
   /**
-   * Update the current active raid so later background picks skip it.
+   * Update the current active target so later background picks skip it.
+   *
+   * @param {string} target
+   */
+  function setActiveTarget(target) {
+    if (activeTarget !== target) {
+      logger.info(`[ui-active] scheduler target -> "${target}"`);
+    }
+    activeTarget = target;
+    pumpQueue();
+  }
+
+  /**
+   * Backwards-compatible alias retained for the legacy raid-scoped tests and
+   * non-boss load paths.
    *
    * @param {string} raid
    */
   function setActiveRaid(raid) {
-    if (activeRaid !== raid) {
-      logger.info(`[ui-active] scheduler target raid -> "${raid}"`);
-    }
-    activeRaid = raid;
-    pumpQueue();
+    setActiveTarget(raid);
   }
 
   /**
@@ -107,7 +145,7 @@ export function createRaidLoadScheduler(config) {
   }
 
   function getNextRecord() {
-    const activeRecord = getNextRecordForRaid(activeRaid);
+    const activeRecord = getNextRecordForTarget(activeTarget);
     if (activeRecord) {
       return activeRecord;
     }
@@ -115,22 +153,38 @@ export function createRaidLoadScheduler(config) {
       return null;
     }
 
-    for (const record of allFiles) {
-      if (record.raid === activeRaid) {
-        continue;
+    for (const target of getBackgroundTargetOrder()) {
+      const record = getNextRecordForTarget(target);
+      if (record) {
+        return record;
       }
-      const state = fileStateByPath.get(record.path);
-      if (!isLoadableState(state)) {
-        continue;
-      }
-      return record;
     }
     return null;
   }
 
-  function getNextRecordForRaid(raid) {
-    if (!raid) return null;
-    const files = filesByRaid.get(raid) || [];
+  function getBackgroundTargetOrder() {
+    const orderedTargets = [];
+    const activeRaid = targetRaidMap.get(activeTarget)?.raid || activeTarget;
+    const siblingTargets = targetsByRaid.get(activeRaid) || [];
+    siblingTargets.forEach((target) => {
+      if (target && target !== activeTarget) {
+        orderedTargets.push(target);
+      }
+    });
+
+    for (const target of targetFiles.keys()) {
+      if (target === activeTarget || orderedTargets.includes(target)) {
+        continue;
+      }
+      orderedTargets.push(target);
+    }
+
+    return orderedTargets;
+  }
+
+  function getNextRecordForTarget(target) {
+    if (!target) return null;
+    const files = targetFiles.get(target) || [];
     for (const record of files) {
       const state = fileStateByPath.get(record.path);
       if (!isLoadableState(state)) {
@@ -152,7 +206,7 @@ export function createRaidLoadScheduler(config) {
     const state = fileStateByPath.get(record.path);
     if (!state || state.promise || !isLoadableState(state)) return;
 
-    const lane = record.raid === activeRaid ? "active" : "background";
+    const lane = record.loadTarget === activeTarget ? "active" : "background";
     inFlight += 1;
     state.attempts += 1;
     state.status = "loading";
@@ -169,37 +223,37 @@ export function createRaidLoadScheduler(config) {
         if (state.attempts < 2) {
           state.status = "queued";
           logger.warn(
-            `[${lane}] retry queued for ${record.path} (raid="${record.raid}", attempt=${state.attempts}, error=${error?.message || error})`
+            `[${lane}] retry queued for ${record.path} (target="${record.loadTarget || record.raid}", attempt=${state.attempts}, error=${error?.message || error})`
           );
           return;
         }
         state.status = "failed";
         logger.warn(
-          `[${lane}] failed ${record.path} after ${state.attempts} attempt(s) (raid="${record.raid}", error=${error?.message || error})`
+          `[${lane}] failed ${record.path} after ${state.attempts} attempt(s) (target="${record.loadTarget || record.raid}", error=${error?.message || error})`
         );
         onFileFailed(record, error);
       })
       .finally(() => {
         inFlight = Math.max(0, inFlight - 1);
-        notifyRaidWaiters(record.raid);
+        notifyTargetWaiters(record.loadTarget || record.raid);
         pumpQueue();
       });
   }
 
-  function waitForRaidTerminal(raid) {
-    if (isRaidTerminal(raid)) {
+  function waitForTargetTerminal(target) {
+    if (isTargetTerminal(target)) {
       return Promise.resolve();
     }
 
     return new Promise((resolve) => {
-      const waiters = raidWaiters.get(raid) || [];
+      const waiters = targetWaiters.get(target) || [];
       waiters.push(resolve);
-      raidWaiters.set(raid, waiters);
+      targetWaiters.set(target, waiters);
     });
   }
 
-  function isRaidTerminal(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function isTargetTerminal(target) {
+    const files = targetFiles.get(target) || [];
     if (files.length === 0) {
       return true;
     }
@@ -210,33 +264,33 @@ export function createRaidLoadScheduler(config) {
     });
   }
 
-  function notifyRaidWaiters(raid) {
-    if (!isRaidTerminal(raid)) {
+  function notifyTargetWaiters(target) {
+    if (!isTargetTerminal(target)) {
       return;
     }
-    const { total, loaded, failed } = summarizeRaidState(raid);
-    const lane = raid === activeRaid ? "ui-active" : "background-cache";
+    const { total, loaded, failed } = summarizeTargetState(target);
+    const lane = target === activeTarget ? "ui-active" : "background-cache";
     logger.info(
-      `[${lane}] raid "${raid}" reached terminal state (loaded=${loaded}, failed=${failed}, total=${total})`
+      `[${lane}] target "${target}" reached terminal state (loaded=${loaded}, failed=${failed}, total=${total})`
     );
-    const waiters = raidWaiters.get(raid);
+    const waiters = targetWaiters.get(target);
     if (!waiters?.length) {
       return;
     }
-    raidWaiters.delete(raid);
+    targetWaiters.delete(target);
     waiters.forEach((resolve) => resolve());
   }
 
-  function countPendingFilesForRaid(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function countPendingFilesForTarget(target) {
+    const files = targetFiles.get(target) || [];
     return files.filter((record) => {
       const state = fileStateByPath.get(record.path);
       return state?.status !== "loaded" && state?.status !== "failed";
     }).length;
   }
 
-  function summarizeRaidState(raid) {
-    const files = filesByRaid.get(raid) || [];
+  function summarizeTargetState(target) {
+    const files = targetFiles.get(target) || [];
     let loaded = 0;
     let failed = 0;
     files.forEach((record) => {
@@ -255,9 +309,59 @@ export function createRaidLoadScheduler(config) {
   }
 
   return {
+    prioritizeTarget,
     prioritizeRaid,
+    setActiveTarget,
     setActiveRaid,
     startBackgroundLoading,
     getFileState,
   };
+}
+
+function buildFallbackTargetMetadata(targetFiles, loadTargetsByRaid) {
+  const metadata = new Map();
+  if (!targetFiles) {
+    return metadata;
+  }
+
+  for (const [target, files] of targetFiles.entries()) {
+    const firstRecord = files[0] || {};
+    metadata.set(target, {
+      raid: firstRecord.raid || target,
+      loadTarget: target,
+      scopeType: "raid",
+      isBossScoped: false,
+    });
+  }
+
+  if (loadTargetsByRaid?.size) {
+    loadTargetsByRaid.forEach((targets, raid) => {
+      targets.forEach((target) => {
+        const current = metadata.get(target) || { loadTarget: target };
+        metadata.set(target, {
+          ...current,
+          raid,
+        });
+      });
+    });
+  }
+
+  return metadata;
+}
+
+function buildFallbackTargetsByRaid(targetFiles, metadataByTarget) {
+  const targetsByRaid = new Map();
+  if (!targetFiles) {
+    return targetsByRaid;
+  }
+
+  for (const target of targetFiles.keys()) {
+    const raid = metadataByTarget.get(target)?.raid || target;
+    if (!targetsByRaid.has(raid)) {
+      targetsByRaid.set(raid, []);
+    }
+    targetsByRaid.get(raid).push(target);
+  }
+
+  return targetsByRaid;
 }

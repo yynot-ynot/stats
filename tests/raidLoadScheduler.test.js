@@ -140,3 +140,76 @@ test("scheduler reprioritizes the latest active raid before older queued files",
   deferredByPath.get("json/b-1.json.gz").resolve([]);
   await raidBPromise;
 });
+
+test("scheduler warms sibling boss targets before unrelated raids", async () => {
+  const started = [];
+  const deferredByPath = new Map();
+
+  const allFiles = [
+    {
+      path: "json/trial-doomtrain.json.gz",
+      raid: "Trials III (Extreme)",
+      loadTarget: "Trials III (Extreme)::doomtrain",
+    },
+    {
+      path: "json/trial-enuo.json.gz",
+      raid: "Trials III (Extreme)",
+      loadTarget: "Trials III (Extreme)::enuo",
+    },
+    {
+      path: "json/heavyweight.json.gz",
+      raid: "AAC Heavyweight",
+      loadTarget: "AAC Heavyweight",
+    },
+  ];
+
+  const scheduler = createRaidLoadScheduler({
+    allFiles,
+    filesByLoadTarget: new Map([
+      ["Trials III (Extreme)::doomtrain", [allFiles[0]]],
+      ["Trials III (Extreme)::enuo", [allFiles[1]]],
+      ["AAC Heavyweight", [allFiles[2]]],
+    ]),
+    loadTargetsByRaid: new Map([
+      [
+        "Trials III (Extreme)",
+        ["Trials III (Extreme)::doomtrain", "Trials III (Extreme)::enuo"],
+      ],
+      ["AAC Heavyweight", ["AAC Heavyweight"]],
+    ]),
+    targetMetadataByKey: new Map([
+      [
+        "Trials III (Extreme)::doomtrain",
+        { raid: "Trials III (Extreme)", scopeType: "boss" },
+      ],
+      [
+        "Trials III (Extreme)::enuo",
+        { raid: "Trials III (Extreme)", scopeType: "boss" },
+      ],
+      ["AAC Heavyweight", { raid: "AAC Heavyweight", scopeType: "raid" }],
+    ]),
+    backgroundConcurrency: 1,
+    loadFile: async (record) => {
+      started.push(record.path);
+      const deferred = createDeferred();
+      deferredByPath.set(record.path, deferred);
+      return deferred.promise;
+    },
+    onFileLoaded() {},
+    onFileFailed() {},
+  });
+
+  const activePromise = scheduler.prioritizeTarget("Trials III (Extreme)::doomtrain");
+  assert.deepEqual(started, ["json/trial-doomtrain.json.gz"]);
+
+  deferredByPath.get("json/trial-doomtrain.json.gz").resolve([]);
+  await activePromise;
+
+  scheduler.startBackgroundLoading();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(started, [
+    "json/trial-doomtrain.json.gz",
+    "json/trial-enuo.json.gz",
+  ]);
+});

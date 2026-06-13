@@ -332,8 +332,16 @@ h1 {
   color: #b8d8ff;
 }
 
+.active-raid-loading-progress {
+  margin-top: 0.7rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #eef7ff;
+  letter-spacing: 0.04em;
+}
+
 .active-raid-loading-pulse {
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   display: flex;
   justify-content: center;
   gap: 0.55rem;

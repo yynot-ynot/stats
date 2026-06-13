@@ -8,6 +8,10 @@ import {
 import {
   buildManifestRaidIndex,
   resolveEffectiveRaid,
+  resolveEffectiveBoss,
+  resolveActivationTarget,
+  getManifestBossesForRaid,
+  isBossScopedRaid,
 } from "../core/manifestRaidIndex.js";
 import { createRaidLoadScheduler } from "../core/raidLoadScheduler.js";
 import {
@@ -25,6 +29,7 @@ import {
   populateAllFilters,
   setupHeaderBindings,
   populateDropdown,
+  setManifestBossOptionsByRaid,
 } from "../ui/filterControls.js";
 import {
   setupJobSidebar,
@@ -50,16 +55,271 @@ let manifestIndex = null;
 let raidDataStore = null;
 let raidLoadScheduler = null;
 let activeRaid = "";
+let activeLoadTarget = "";
 let chromeInitialized = false;
 let filterUrlSyncStarted = false;
 let raidChangeListenerInitialized = false;
+let bossChangeListenerInitialized = false;
 let activationInFlightPromise = null;
 let requestedRaid = "";
 let requestedRaidOptions = null;
 let raidRequestVersion = 0;
 let processingRaid = "";
+let processingLoadTarget = "";
+let visibleLoadingTarget = "";
+let visibleLoadingLabel = "";
+let visibleLoadingKind = "raid";
 const activationWaiters = new Set();
 const finalFailedFiles = new Map();
+
+/**
+ * Build the normalized activation descriptor for the supplied raid/boss
+ * request. This keeps target resolution, loading labels, and scope kind in one
+ * place so runtime code and unit tests evaluate the same contract.
+ *
+ * @param {ReturnType<typeof buildManifestRaidIndex>} manifestIndexArg
+ * @param {string} raid
+ * @param {string} [selectedBoss=""]
+ * @returns {{
+ *   raid: string,
+ *   resolvedBoss: string,
+ *   activationTarget: string,
+ *   activationMetadata: Object|undefined,
+ *   loadingKind: "raid"|"boss",
+ *   loadingLabel: string,
+ * }}
+ */
+function buildActivationRequest(manifestIndexArg, raid, selectedBoss = "") {
+  const resolvedBoss = resolveEffectiveBoss(manifestIndexArg, raid, selectedBoss);
+  const activationTarget = resolveActivationTarget(
+    manifestIndexArg,
+    raid,
+    resolvedBoss
+  );
+  const activationMetadata =
+    manifestIndexArg?.targetMetadataByKey?.get(activationTarget);
+  const loadingKind = activationMetadata?.scopeType === "boss" ? "boss" : "raid";
+  const loadingLabel =
+    activationMetadata?.boss || activationMetadata?.raid || raid;
+
+  return {
+    raid,
+    resolvedBoss,
+    activationTarget,
+    activationMetadata,
+    loadingKind,
+    loadingLabel,
+  };
+}
+
+/**
+ * Decide whether an in-flight activation request is an exact duplicate of the
+ * currently processing target.
+ *
+ * @param {Object} params
+ * @param {boolean} params.hasActivationInFlight
+ * @param {string} params.raid
+ * @param {string} params.processingRaid
+ * @param {string} params.activationTarget
+ * @param {string} params.processingLoadTarget
+ * @returns {boolean}
+ */
+function shouldIgnoreDuplicateActivation(params) {
+  const {
+    hasActivationInFlight,
+    raid,
+    processingRaid,
+    activationTarget,
+    processingLoadTarget,
+  } = params;
+  return Boolean(
+    hasActivationInFlight &&
+      raid === processingRaid &&
+      activationTarget === processingLoadTarget
+  );
+}
+
+/**
+ * Decide whether a Trial/Ultimate boss change should schedule a new activation.
+ * The helper preserves the current parity rules: boss-scoped families only,
+ * ignore no-op changes, and treat the active load target as the source of
+ * truth when deciding whether we already show the requested boss.
+ *
+ * @param {Object} params
+ * @param {ReturnType<typeof buildManifestRaidIndex>} params.manifestIndexArg
+ * @param {string} params.nextRaid
+ * @param {string} params.nextBoss
+ * @param {string} params.previousBoss
+ * @param {string} params.activeLoadTargetValue
+ * @returns {{shouldActivate: boolean, activationTarget: string}}
+ */
+function evaluateBossChangeActivation(params) {
+  const {
+    manifestIndexArg,
+    nextRaid,
+    nextBoss,
+    previousBoss,
+    activeLoadTargetValue,
+  } = params;
+  if (!nextRaid || !nextBoss || !manifestIndexArg) {
+    return { shouldActivate: false, activationTarget: "" };
+  }
+  if (!isBossScopedRaid(manifestIndexArg, nextRaid)) {
+    return { shouldActivate: false, activationTarget: "" };
+  }
+
+  const { activationTarget } = buildActivationRequest(
+    manifestIndexArg,
+    nextRaid,
+    nextBoss
+  );
+  if (previousBoss === nextBoss || activationTarget === activeLoadTargetValue) {
+    return { shouldActivate: false, activationTarget };
+  }
+
+  return { shouldActivate: true, activationTarget };
+}
+
+export function __buildActivationRequestForTests(
+  manifestIndexArg,
+  raid,
+  selectedBoss = ""
+) {
+  return buildActivationRequest(manifestIndexArg, raid, selectedBoss);
+}
+
+export function __shouldIgnoreDuplicateActivationForTests(params) {
+  return shouldIgnoreDuplicateActivation(params);
+}
+
+export function __evaluateBossChangeActivationForTests(params) {
+  return evaluateBossChangeActivation(params);
+}
+
+/**
+ * Toggle controls that should be owned exclusively by the loading banner while
+ * a new raid/boss target is activating. The previous inline display values are
+ * restored afterward so existing collapsed/expanded behavior remains intact.
+ *
+ * @param {boolean} isVisible
+ */
+function syncLoadingOwnedControlVisibility(isVisible) {
+  if (typeof document === "undefined") return;
+
+  const controlledElements = [
+    document.getElementById("job-sidebar"),
+    document.getElementById("sidebar-label-container"),
+    document.getElementById("dps-type-label-container"),
+  ].filter(Boolean);
+
+  controlledElements.forEach((element) => {
+    if (!element) return;
+    if (!isVisible) {
+      if (typeof element.dataset?.preLoadDisplay === "string") {
+        element.style.display = element.dataset.preLoadDisplay;
+        delete element.dataset.preLoadDisplay;
+      }
+      return;
+    }
+
+    if (!("preLoadDisplay" in element.dataset)) {
+      element.dataset.preLoadDisplay = element.style.display;
+    }
+    element.style.display = "none";
+  });
+}
+
+export function __syncLoadingOwnedControlVisibilityForTests(isVisible) {
+  syncLoadingOwnedControlVisibility(isVisible);
+}
+
+export function __buildActiveRaidLoadingMarkupForTests(
+  label,
+  subtitle,
+  progressPercent
+) {
+  return buildActiveRaidLoadingMarkup(label, subtitle, progressPercent);
+}
+
+export function __shouldRebuildActiveRaidLoadingMarkupForTests(params) {
+  return shouldRebuildActiveRaidLoadingMarkup(params);
+}
+
+/**
+ * Convert the current target record into the whole-number percentage shown in
+ * the shared loading banner. The percentage is target-scoped, so boss-scoped
+ * activation only reflects the active subset rather than every file in the
+ * broader raid family.
+ *
+ * @param {string} target
+ * @returns {number|null}
+ */
+function getLoadingProgressPercent(target) {
+  if (!raidDataStore || !target) {
+    return null;
+  }
+
+  const progress = raidDataStore.getTargetProgress?.(target);
+  if (!progress) {
+    return null;
+  }
+
+  return progress.percentLoaded;
+}
+
+/**
+ * Refresh the visible loading banner's target-scoped percentage without
+ * disturbing the existing title/subtitle or bouncing-dot treatment.
+ *
+ * @param {string} target
+ */
+function syncVisibleTargetLoadingProgress(target) {
+  if (!target || target !== visibleLoadingTarget) {
+    return;
+  }
+
+  syncActiveRaidLoadingIndicator(
+    true,
+    visibleLoadingLabel,
+    visibleLoadingKind,
+    getLoadingProgressPercent(target),
+    target
+  );
+}
+
+/**
+ * Decide whether the loading banner must be rebuilt from scratch or can reuse
+ * the existing DOM and only patch the progress readout in place.
+ *
+ * @param {Object} params
+ * @param {string} params.nextTarget
+ * @param {string} params.nextLabel
+ * @param {"raid"|"boss"} params.nextKind
+ * @param {string} [params.currentTarget]
+ * @param {string} [params.currentLabel]
+ * @param {"raid"|"boss"} [params.currentKind]
+ * @param {boolean} [params.isVisible]
+ * @returns {boolean}
+ */
+function shouldRebuildActiveRaidLoadingMarkup(params) {
+  const {
+    nextTarget,
+    nextLabel,
+    nextKind,
+    currentTarget = "",
+    currentLabel = "",
+    currentKind = "raid",
+    isVisible = false,
+  } = params;
+  if (!isVisible) {
+    return true;
+  }
+  return (
+    nextTarget !== currentTarget ||
+    nextLabel !== currentLabel ||
+    nextKind !== currentKind
+  );
+}
 
 /**
  * Get the current loading state.
@@ -94,21 +354,33 @@ export async function init() {
     const t1 = performance.now();
     const files = await fetchAvailableJsonFiles("json/");
     manifestIndex = buildManifestRaidIndex(files);
-    raidDataStore = createRaidDataStore(manifestIndex.filesByRaid);
+    setManifestBossOptionsByRaid(
+      manifestIndex.bossOptionsByRaid,
+      manifestIndex.bossLatestDatesByRaid
+    );
+    raidDataStore = createRaidDataStore({
+      filesByRaid: manifestIndex.filesByRaid,
+      filesByLoadTarget: manifestIndex.filesByLoadTarget,
+      loadTargetsByRaid: manifestIndex.loadTargetsByRaid,
+    });
     raidLoadScheduler = createRaidLoadScheduler({
       allFiles: manifestIndex.allFiles,
-      filesByRaid: manifestIndex.filesByRaid,
+      filesByLoadTarget: manifestIndex.filesByLoadTarget,
+      loadTargetsByRaid: manifestIndex.loadTargetsByRaid,
+      targetMetadataByKey: manifestIndex.targetMetadataByKey,
       loadFile: async (record) => fetchAndDecompressJsonGz(record.path),
       onFileLoaded: (record, rows) => {
-        raidDataStore.appendFileRows(record.raid, record.path, rows);
+        raidDataStore.appendFileRows(record, rows);
         finalFailedFiles.delete(record.path);
         syncLoadFailureMessage();
+        syncVisibleTargetLoadingProgress(record.loadTarget || record.raid);
       },
       onFileFailed: (record, error) => {
-        raidDataStore.markFileFailed(record.raid, record.path, error);
+        raidDataStore.markFileFailed(record, error);
         finalFailedFiles.set(record.path, error);
         logger.warn(`Error loading ${record.path}:`, error);
         syncLoadFailureMessage();
+        syncVisibleTargetLoadingProgress(record.loadTarget || record.raid);
       },
     });
     const t2 = performance.now();
@@ -123,12 +395,19 @@ export async function init() {
     logger.info(
       `[ui-active] resolved startup raid "${effectiveRaid}" from URL raid "${initialFiltersFromUrl.selectedRaid || ""}"`
     );
-    primeManifestRaidSelection(effectiveRaid);
+    const effectiveBoss = resolveEffectiveBoss(
+      manifestIndex,
+      effectiveRaid,
+      initialFiltersFromUrl.selectedBoss
+    );
+    primeManifestRaidSelection(effectiveRaid, effectiveBoss);
     ensureRaidChangeListener();
+    ensureBossChangeListener();
     await requestRaidActivation(effectiveRaid, {
       source: "startup",
       applyUrlFilters: true,
       urlFilters: initialFiltersFromUrl,
+      selectedBoss: effectiveBoss,
     });
 
     if (!filterUrlSyncStarted) {
@@ -150,10 +429,11 @@ export async function init() {
 }
 
 /**
- * Load the currently requested raid, derive its row-driven UI state, and
- * activate that raid as the current app context without restoring prior
- * user-made selections. If a newer raid request arrives while the current load
- * is in flight, this activation exits early and lets the newer request win.
+ * Load the currently requested raid (or narrower boss-scoped target), derive
+ * its row-driven UI state, and activate it as the current app context without
+ * restoring prior user-made selections. If a newer request arrives while the
+ * current load is in flight, this activation exits early and lets the newer
+ * request win.
  *
  * @param {string} raid
  * @param {Object} options
@@ -164,20 +444,44 @@ export async function init() {
 async function activateRaid(raid, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) return;
 
-  const { source = "unknown", applyUrlFilters = false, urlFilters = null } = options;
+  const {
+    source = "unknown",
+    applyUrlFilters = false,
+    urlFilters = null,
+    selectedBoss = "",
+  } = options;
+  const {
+    resolvedBoss,
+    activationTarget,
+    loadingKind,
+    loadingLabel,
+  } = buildActivationRequest(manifestIndex, raid, selectedBoss);
   processingRaid = raid;
+  processingLoadTarget = activationTarget;
   try {
-    logger.info(`[ui-active] begin activation for raid "${raid}" (source=${source})`);
+    logger.info(
+      `[ui-active] begin activation for raid "${raid}" via target "${activationTarget}" (source=${source})`
+    );
     isLoading = true;
-    syncActiveRaidLoadingIndicator(true, raid);
-    raidLoadScheduler.setActiveRaid(raid);
-    raidDataStore.markRaidLoading(raid);
+    raidDataStore.markTargetLoading(activationTarget);
+    syncActiveRaidLoadingIndicator(
+      true,
+      loadingLabel,
+      loadingKind,
+      getLoadingProgressPercent(activationTarget) ?? 0,
+      activationTarget
+    );
+    raidLoadScheduler.setActiveTarget(activationTarget);
 
     const tRaidLoadStart = performance.now();
     const requestVersion = raidRequestVersion;
-    const supersedeWaiter = createSupersedingRaidWaiter(raid, requestVersion);
+    const supersedeWaiter = createSupersedingRaidWaiter(
+      raid,
+      activationTarget,
+      requestVersion
+    );
     const activationOutcome = await Promise.race([
-      raidLoadScheduler.prioritizeRaid(raid).then(() => "loaded"),
+      raidLoadScheduler.prioritizeTarget(activationTarget).then(() => "loaded"),
       supersedeWaiter.promise,
     ]);
     supersedeWaiter.cancel();
@@ -185,18 +489,20 @@ async function activateRaid(raid, options = {}) {
       logger.info(`[ui-active] activation for raid "${raid}" superseded by a newer request`);
       return;
     }
-    if (requestedRaid && requestedRaid !== raid) {
+    const latestRequestedTarget = getRequestedActivationTarget();
+    if (latestRequestedTarget && latestRequestedTarget !== activationTarget) {
       logger.info(
-        `[ui-active] activation for raid "${raid}" skipped because "${requestedRaid}" is now pending`
+        `[ui-active] activation for raid "${raid}" skipped because newer target "${latestRequestedTarget}" is now pending`
       );
       return;
     }
 
     activeRaid = raid;
-    const activeRaidRows = raidDataStore.getRaidRows(raid);
+    activeLoadTarget = activationTarget;
+    const activeRaidRows = raidDataStore.getRowsForTarget(activationTarget);
     const tRaidLoadEnd = performance.now();
     logger.info(
-      `[ui-active] activated raid "${raid}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
+      `[ui-active] activated raid "${raid}" via target "${activationTarget}" with ${activeRaidRows.length} rows after ${(tRaidLoadEnd - tRaidLoadStart).toFixed(1)}ms`
     );
 
     setupDataDisplayManager(activeRaidRows);
@@ -204,6 +510,9 @@ async function activateRaid(raid, options = {}) {
       raidValues: manifestIndex.sortedRaids,
       raidLatestDates: manifestIndex.latestDateByRaid,
       preferredRaid: raid,
+      bossValuesByRaid: manifestIndex.bossOptionsByRaid,
+      bossLatestDatesByRaid: manifestIndex.bossLatestDatesByRaid,
+      preferredBoss: resolvedBoss,
     });
 
     if (!chromeInitialized) {
@@ -228,14 +537,17 @@ async function activateRaid(raid, options = {}) {
 
     syncLoadFailureMessage();
     isLoading = false;
-    syncActiveRaidLoadingIndicator(false, raid);
+    syncActiveRaidLoadingIndicator(false, loadingLabel, loadingKind);
     logger.info(
-      `[ui-active] UI activation complete for raid "${raid}" (source=${source}, rows=${activeRaidRows.length}, bosses=${new Set(activeRaidRows.map((row) => row.boss).filter(Boolean)).size})`
+      `[ui-active] UI activation complete for raid "${raid}" via target "${activationTarget}" (source=${source}, rows=${activeRaidRows.length}, bosses=${new Set(activeRaidRows.map((row) => row.boss).filter(Boolean)).size})`
     );
     logDisplayedRaidBossState();
   } finally {
     if (processingRaid === raid) {
       processingRaid = "";
+    }
+    if (processingLoadTarget === activationTarget) {
+      processingLoadTarget = "";
     }
   }
 }
@@ -253,8 +565,24 @@ function requestRaidActivation(raid, options = {}) {
   if (!raid || !manifestIndex || !raidLoadScheduler || !raidDataStore) {
     return Promise.resolve();
   }
-  if (activationInFlightPromise && raid === processingRaid) {
-    logger.debug(`Ignoring duplicate activation request for in-flight raid "${raid}"`);
+  const { activationTarget, loadingKind, loadingLabel } =
+    buildActivationRequest(
+      manifestIndex,
+      raid,
+      options.selectedBoss || getCurrentFilterState().selectedBoss
+    );
+  if (
+    shouldIgnoreDuplicateActivation({
+      hasActivationInFlight: Boolean(activationInFlightPromise),
+      raid,
+      processingRaid,
+      activationTarget,
+      processingLoadTarget,
+    })
+  ) {
+    logger.debug(
+      `Ignoring duplicate activation request for in-flight target "${activationTarget}"`
+    );
     return activationInFlightPromise;
   }
 
@@ -262,12 +590,18 @@ function requestRaidActivation(raid, options = {}) {
   requestedRaidOptions = options;
   raidRequestVersion += 1;
   logger.info(
-    `[ui-active] queued activation request for raid "${raid}" (requestVersion=${raidRequestVersion}, source=${options.source || "unknown"})`
+    `[ui-active] queued activation request for raid "${raid}" via target "${activationTarget}" (requestVersion=${raidRequestVersion}, source=${options.source || "unknown"})`
   );
   isLoading = true;
-  syncActiveRaidLoadingIndicator(true, raid);
-  raidLoadScheduler.setActiveRaid(raid);
-  raidDataStore.markRaidLoading(raid);
+  raidDataStore.markTargetLoading(activationTarget);
+  syncActiveRaidLoadingIndicator(
+    true,
+    loadingLabel,
+    loadingKind,
+    getLoadingProgressPercent(activationTarget) ?? 0,
+    activationTarget
+  );
+  raidLoadScheduler.setActiveTarget(activationTarget);
   notifyActivationWaiters();
 
   if (activationInFlightPromise) {
@@ -296,17 +630,19 @@ async function processRequestedRaidActivations() {
  * the controller no longer applies stale row-driven UI to the superseded raid.
  *
  * @param {string} raid
+ * @param {string} activationTarget
  * @param {number} requestVersion
  * @returns {{promise: Promise<string>, cancel: () => void}}
  */
-function createSupersedingRaidWaiter(raid, requestVersion) {
+function createSupersedingRaidWaiter(raid, activationTarget, requestVersion) {
   let waiter = null;
   const promise = new Promise((resolve) => {
     waiter = () => {
+      const latestRequestedTarget = getRequestedActivationTarget();
       if (
         raidRequestVersion !== requestVersion &&
-        requestedRaid &&
-        requestedRaid !== raid
+        latestRequestedTarget &&
+        latestRequestedTarget !== activationTarget
       ) {
         activationWaiters.delete(waiter);
         resolve("superseded");
@@ -327,6 +663,14 @@ function createSupersedingRaidWaiter(raid, requestVersion) {
 
 function notifyActivationWaiters() {
   Array.from(activationWaiters).forEach((waiter) => waiter());
+}
+
+function getRequestedActivationTarget() {
+  if (!requestedRaid || !manifestIndex) {
+    return "";
+  }
+  const requestedBoss = requestedRaidOptions?.selectedBoss || "";
+  return resolveActivationTarget(manifestIndex, requestedRaid, requestedBoss);
 }
 
 /**
@@ -465,7 +809,40 @@ function ensureRaidChangeListener() {
   });
 }
 
-function primeManifestRaidSelection(effectiveRaid) {
+function ensureBossChangeListener() {
+  if (bossChangeListenerInitialized) return;
+  bossChangeListenerInitialized = true;
+  subscribeToFilterChanges((state, change) => {
+    if (!change || change.key !== "selectedBoss") return;
+    const nextBoss = state.selectedBoss || "";
+    const nextRaid = state.selectedRaid || activeRaid || "";
+    const { shouldActivate } = evaluateBossChangeActivation({
+      manifestIndexArg: manifestIndex,
+      nextRaid,
+      nextBoss,
+      previousBoss: change.previousValue || "",
+      activeLoadTargetValue: activeLoadTarget,
+    });
+    if (!shouldActivate) {
+      return;
+    }
+
+    logger.info(
+      `[ui-active] observed selectedBoss change in filter state: previous="${change.previousValue || ""}" next="${nextBoss}" (raid="${nextRaid}")`
+    );
+    requestRaidActivation(nextRaid, {
+      source: "filter-state:selectedBoss",
+      selectedBoss: nextBoss,
+    }).catch((error) => {
+      logger.error(
+        `Failed to activate boss "${nextBoss}" for raid "${nextRaid}"`,
+        error
+      );
+    });
+  });
+}
+
+function primeManifestRaidSelection(effectiveRaid, preferredBoss = "") {
   const raidSelect = document.getElementById("raid-select");
   const bossSelect = document.getElementById("boss-select");
   if (!raidSelect || !bossSelect || !manifestIndex) {
@@ -476,7 +853,15 @@ function primeManifestRaidSelection(effectiveRaid) {
     latestDateMap: manifestIndex.latestDateByRaid,
     preferredValue: effectiveRaid,
   });
-  populateDropdown(bossSelect, new Set(), "Boss");
+  populateDropdown(
+    bossSelect,
+    new Set(getManifestBossesForRaid(manifestIndex, effectiveRaid)),
+    "Boss",
+    {
+      latestDateMap: manifestIndex.bossLatestDatesByRaid[effectiveRaid],
+      preferredValue: preferredBoss,
+    }
+  );
   logger.info(
     `[ui-active] primed manifest-driven raid selector with ${manifestIndex.sortedRaids.length} raid option(s); preferred raid="${effectiveRaid}"`
   );
@@ -505,7 +890,24 @@ function syncLoadFailureMessage() {
   messageEl.textContent = `Some data files failed to load and are being treated as missing data: ${failedNames.join(", ")}`;
 }
 
-function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
+/**
+ * Show or hide the shared loading banner used during both raid-scoped and
+ * boss-scoped activation. The optional label/kind pair lets the same banner
+ * stay truthful when the active load target is narrower than an entire raid.
+ *
+ * @param {boolean} isVisible
+ * @param {string} [label=""]
+ * @param {"raid"|"boss"} [kind="raid"]
+ * @param {number|null} [progressPercent=null]
+ * @param {string} [target=""]
+ */
+function syncActiveRaidLoadingIndicator(
+  isVisible,
+  label = "",
+  kind = "raid",
+  progressPercent = null,
+  target = ""
+) {
   const indicatorEl = getOrCreateActiveRaidLoadingElement();
   if (!indicatorEl) return;
   const trendPlaceholder = document.getElementById("trend-view-placeholder");
@@ -515,9 +917,13 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
   const bodyEl = document.body;
 
   if (!isVisible) {
+    visibleLoadingTarget = "";
+    visibleLoadingLabel = "";
+    visibleLoadingKind = "raid";
     if (bodyEl) {
       delete bodyEl.dataset.appLoading;
     }
+    syncLoadingOwnedControlVisibility(false);
     indicatorEl.classList.add("view-hidden");
     indicatorEl.setAttribute("aria-hidden", "true");
     if (trendPlaceholder) {
@@ -535,6 +941,7 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
   if (bodyEl) {
     bodyEl.dataset.appLoading = "true";
   }
+  syncLoadingOwnedControlVisibility(true);
 
   if (parseScaleContainer) {
     // Hide the scale toggle while a raid is loading so stale controls do not
@@ -549,18 +956,90 @@ function syncActiveRaidLoadingIndicator(isVisible, raid = "") {
     trendPlaceholder.style.display = "none";
   }
 
-  const activeRaidLabel = raid || activeRaid || "selected raid";
+  const activeLabel = label || activeRaid || "selected target";
+  const subtitle = kind === "boss" ? "Loading boss data" : "Loading raid data";
+  const shouldRebuild = shouldRebuildActiveRaidLoadingMarkup({
+    nextTarget: target || visibleLoadingTarget,
+    nextLabel: activeLabel,
+    nextKind: kind,
+    currentTarget: visibleLoadingTarget,
+    currentLabel: visibleLoadingLabel,
+    currentKind: visibleLoadingKind,
+    isVisible: !indicatorEl.classList.contains("view-hidden"),
+  });
+  visibleLoadingTarget = target || visibleLoadingTarget;
+  visibleLoadingLabel = activeLabel;
+  visibleLoadingKind = kind;
   indicatorEl.classList.remove("view-hidden");
   indicatorEl.setAttribute("aria-hidden", "false");
-  indicatorEl.innerHTML = `
+  if (shouldRebuild) {
+    indicatorEl.innerHTML = buildActiveRaidLoadingMarkup(
+      activeLabel,
+      subtitle,
+      progressPercent
+    );
+    return;
+  }
+
+  syncActiveRaidLoadingProgressText(indicatorEl, progressPercent);
+}
+
+/**
+ * Build the loading banner markup. The percentage lives on its own line above
+ * the bouncing dots so the motion treatment remains unchanged while still
+ * surfacing exact target progress.
+ *
+ * @param {string} activeLabel
+ * @param {string} subtitle
+ * @param {number|null} progressPercent
+ * @returns {string}
+ */
+function buildActiveRaidLoadingMarkup(activeLabel, subtitle, progressPercent) {
+  const normalizedPercent =
+    typeof progressPercent === "number"
+      ? Math.max(0, Math.min(100, Math.round(progressPercent)))
+      : null;
+  const progressMarkup =
+    normalizedPercent === null
+      ? ""
+      : `<div class="active-raid-loading-progress" data-loading-progress="true">${normalizedPercent}%</div>`;
+
+  return `
     <div class="active-raid-loading-title">Loading ${escapeHtml(
-      activeRaidLabel
+      activeLabel
     )}</div>
-    <div class="active-raid-loading-subtitle">Loading raid data</div>
+    <div class="active-raid-loading-subtitle">${escapeHtml(subtitle)}</div>
+    ${progressMarkup}
     <div class="active-raid-loading-pulse" aria-hidden="true">
       <span></span><span></span><span></span>
     </div>
   `;
+}
+
+/**
+ * Update the numeric percentage in-place so progress changes do not recreate
+ * the bouncing-dot nodes and inadvertently restart their animation.
+ *
+ * @param {HTMLElement} indicatorEl
+ * @param {number|null} progressPercent
+ */
+function syncActiveRaidLoadingProgressText(indicatorEl, progressPercent) {
+  if (!indicatorEl?.querySelector) {
+    return;
+  }
+
+  const progressEl = indicatorEl.querySelector("[data-loading-progress='true']");
+  if (!progressEl) {
+    return;
+  }
+
+  if (typeof progressPercent !== "number") {
+    progressEl.textContent = "";
+    return;
+  }
+
+  const normalizedPercent = Math.max(0, Math.min(100, Math.round(progressPercent)));
+  progressEl.textContent = `${normalizedPercent}%`;
 }
 
 function getOrCreateLoadMessageElement() {

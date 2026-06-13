@@ -7,6 +7,7 @@ import {
   __resetUrlStateForTests,
   __setFilterChangeSubscriberForTests,
 } from "../js/shared/urlState.js";
+import { filterState, updateFilterValue } from "../js/shared/filterState.js";
 
 function withWindow(locationHref, fn) {
   const originalWindow = global.window;
@@ -115,4 +116,29 @@ test("startFilterUrlSync drops params when filters are cleared", async () => {
       assert.equal(parsed.searchParams.get("view"), "trend");
     }
   );
+});
+
+test("selectedBoss updates the URL immediately during Trial boss switching", async () => {
+  await withWindow("https://example.com/stats?view=trend", (calls) => {
+    __resetUrlStateForTests();
+    __setFilterChangeSubscriberForTests();
+
+    const originalRaid = filterState.selectedRaid;
+    const originalBoss = filterState.selectedBoss;
+
+    try {
+      startFilterUrlSync();
+
+      updateFilterValue("selectedRaid", "Trials III (Extreme)");
+      updateFilterValue("selectedBoss", "Enuo");
+
+      const [, , newUrl] = calls.at(-1);
+      const parsed = new URL(`https://dummy${newUrl}`);
+      assert.equal(parsed.searchParams.get("raid"), "Trials III (Extreme)");
+      assert.equal(parsed.searchParams.get("boss"), "Enuo");
+    } finally {
+      filterState.selectedRaid = originalRaid;
+      filterState.selectedBoss = originalBoss;
+    }
+  });
 });
