@@ -21,6 +21,17 @@ function createTrialManifestIndex() {
   ]);
 }
 
+function createBossScopedManifestIndex() {
+  return buildManifestRaidIndex([
+    "json/20260107_trials-iii-extreme_doomtrain_dps.json.gz",
+    "json/20260608_trials-iii-extreme_enuo_dps.json.gz",
+    "json/20260612_dancing-mad_whole-fight_dps.json.gz",
+    "json/20260612_dancing-mad_p1-kefka_dps.json.gz",
+    "json/20260612_dancing-mad_p5-ultima-kefka_dps.json.gz",
+    "json/20260327_aac-heavyweight_vamp-fatale_dps.json.gz",
+  ]);
+}
+
 test("activation request resolves Trial boss targets with boss-scoped loading labels", () => {
   const manifestIndex = createTrialManifestIndex();
 
@@ -34,6 +45,21 @@ test("activation request resolves Trial boss targets with boss-scoped loading la
   assert.equal(request.activationTarget, "Trials III (Extreme)::doomtrain");
   assert.equal(request.loadingKind, "boss");
   assert.equal(request.loadingLabel, "Doomtrain");
+});
+
+test("activation request resolves UMAD Whole Fight as the default boss-scoped target", () => {
+  const manifestIndex = createBossScopedManifestIndex();
+
+  const request = __buildActivationRequestForTests(
+    manifestIndex,
+    "Dancing Mad",
+    ""
+  );
+
+  assert.equal(request.resolvedBoss, "Whole Fight");
+  assert.equal(request.activationTarget, "Dancing Mad::whole-fight");
+  assert.equal(request.loadingKind, "boss");
+  assert.equal(request.loadingLabel, "Whole Fight");
 });
 
 test("boss change evaluation triggers activation when switching to a different warm or cold Trial boss", () => {
@@ -50,6 +76,23 @@ test("boss change evaluation triggers activation when switching to a different w
   assert.deepEqual(result, {
     shouldActivate: true,
     activationTarget: "Trials III (Extreme)::enuo",
+  });
+});
+
+test("boss change evaluation triggers activation when switching UMAD targets", () => {
+  const manifestIndex = createBossScopedManifestIndex();
+
+  const result = __evaluateBossChangeActivationForTests({
+    manifestIndexArg: manifestIndex,
+    nextRaid: "Dancing Mad",
+    nextBoss: "P5: Ultima Kefka",
+    previousBoss: "Whole Fight",
+    activeLoadTargetValue: "Dancing Mad::whole-fight",
+  });
+
+  assert.deepEqual(result, {
+    shouldActivate: true,
+    activationTarget: "Dancing Mad::p5-ultima-kefka",
   });
 });
 

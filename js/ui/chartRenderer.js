@@ -1298,6 +1298,7 @@ function renderSinglePercentileChart({
     hoverlabel: createHoverLabelTheme(),
   };
 
+  preparePlotlyContainer(container);
   const plotPromise = Plotly.newPlot(container, traces, layout, {
     responsive: true,
   });
@@ -1477,7 +1478,33 @@ function plotChartWithLayout(
     },
     hoverlabel: createHoverLabelTheme(),
   };
+  preparePlotlyContainer(container);
   return Plotly.newPlot(container, traces, layout, { responsive: true });
+}
+
+/**
+ * Reset a reused chart surface before Plotly mounts into it so stale empty-state
+ * markup or prior Plotly scaffolding cannot remain alongside a fresh render.
+ * Calling `Plotly.purge` first lets Plotly release any event listeners tied to
+ * the old graph div before the DOM node is cleared.
+ * @param {HTMLElement} container
+ * @param {{purge?: Function}|undefined} [plotlyApi=globalThis.Plotly]
+ */
+function preparePlotlyContainer(container, plotlyApi = globalThis.Plotly) {
+  if (!container) return;
+
+  if (typeof plotlyApi?.purge === "function") {
+    plotlyApi.purge(container);
+  }
+
+  if (typeof container.replaceChildren === "function") {
+    container.replaceChildren();
+    return;
+  }
+
+  if ("innerHTML" in container) {
+    container.innerHTML = "";
+  }
 }
 
 /**
@@ -1734,4 +1761,11 @@ export function __buildWeekTickConfigForTests(labels, compactDates, weekAnchor) 
 
 export function __getChartDatePresentationForTests(snapshotCompactDate) {
   return getChartDatePresentation(snapshotCompactDate);
+}
+
+export function __preparePlotlyContainerForTests(
+  container,
+  plotlyApi = globalThis.Plotly
+) {
+  return preparePlotlyContainer(container, plotlyApi);
 }

@@ -63,7 +63,12 @@ export function setManifestBossOptionsByRaid(
 // Stable top-level ordering for the grouped raid menu. Known raid families should
 // land in user-facing buckets before any uncategorized future content falls back
 // into "Other".
-const RAID_MENU_SECTION_ORDER = Object.freeze(["Trial", "Savage", "Other"]);
+const RAID_MENU_SECTION_ORDER = Object.freeze([
+  "Trial",
+  "Savage",
+  "Ultimate",
+  "Other",
+]);
 
 /**
  * Sort a raw array of dropdown values using the appropriate override for the given DOM id.
@@ -75,10 +80,38 @@ const RAID_MENU_SECTION_ORDER = Object.freeze(["Trial", "Savage", "Other"]);
  * @param {Array<string>} values - Raw option labels collected from the dataset.
  * @param {string} selectId - DOM id of the <select>, used to look up overrides.
  * @param {Object<string, string>} [latestDateMap] - Map of label -> most recent YYYYMMDD string.
+ * @param {Array<string>} [explicitOrder] - Optional ordered list that should win before date/alphabetical fallbacks.
  * @returns {Array<string>} Newly sorted copy of the supplied values.
  */
-export function sortDropdownValues(values, selectId, latestDateMap) {
+export function sortDropdownValues(
+  values,
+  selectId,
+  latestDateMap,
+  explicitOrder = null
+) {
   const sortedValues = [...values];
+  const normalizedExplicitOrder = Array.isArray(explicitOrder)
+    ? explicitOrder
+    : null;
+
+  if (normalizedExplicitOrder?.length) {
+    sortedValues.sort((a, b) => {
+      const aIndex = normalizedExplicitOrder.findIndex((value) => value === a);
+      const bIndex = normalizedExplicitOrder.findIndex((value) => value === b);
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      if (latestDateMap) {
+        const dateA = latestDateMap?.[a] ?? "";
+        const dateB = latestDateMap?.[b] ?? "";
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA);
+        }
+      }
+      return a.localeCompare(b);
+    });
+    return sortedValues;
+  }
 
   const customOrder = ORDER_OVERRIDES[selectId];
   if (customOrder) {
@@ -154,13 +187,19 @@ export function buildBossIndex(data) {
  * @param {Object} [options] - Optional configuration overrides.
  * @param {Object<string, string>} [options.latestDateMap] - Map of item -> latest YYYYMMDD date for sorting.
  * @param {string} [options.preferredValue] - Selection to preserve when it exists in the option set.
+ * @param {Array<string>} [options.explicitOrder] - Optional ordered list that should be preserved verbatim when possible.
  */
 export function populateDropdown(selectElement, valueSet, label, options = {}) {
   if (!selectElement) return;
 
   const id = selectElement.id;
-  const { latestDateMap, preferredValue } = options;
-  const values = sortDropdownValues(Array.from(valueSet), id, latestDateMap);
+  const { latestDateMap, preferredValue, explicitOrder } = options;
+  const values = sortDropdownValues(
+    Array.from(valueSet),
+    id,
+    latestDateMap,
+    explicitOrder
+  );
 
   selectElement.innerHTML = "";
   selectElement.value = "";
@@ -352,6 +391,7 @@ export function populateAllFilters(data, options = {}) {
     preferredValue: preferredRaid || filterState.selectedRaid,
   });
   populateDropdown(document.getElementById("boss-select"), bosses, "Boss", {
+    explicitOrder: Array.from(bosses),
     preferredValue: preferredBoss || filterState.selectedBoss,
   });
   setupRaidBossFiltering();
@@ -481,6 +521,9 @@ function classifyRaidDropdownSection(raid) {
   ) {
     return "Savage";
   }
+  if (raid === "Dancing Mad") {
+    return "Ultimate";
+  }
   return "Other";
 }
 
@@ -515,6 +558,10 @@ function getBossLatestDateMapForRaid(raid) {
   return bossIndexCache.manifestBossLatestDatesByRaid?.[raid] || null;
 }
 
+function getBossExplicitOrderForRaid(raid) {
+  return Array.from(bossIndexCache.manifestBossesByRaid?.[raid] || []);
+}
+
 /**
  * Keep the boss dropdown synchronized with the currently selected raid and preserve
  * the user-selected boss whenever it still exists within the filtered set.
@@ -529,6 +576,7 @@ export function setupRaidBossFiltering() {
   const applyBossFilter = () => {
     const bossesForRaid = getBossSetForRaid(raidSelect.value);
     const latestDateMap = getBossLatestDateMapForRaid(raidSelect.value);
+    const explicitOrder = getBossExplicitOrderForRaid(raidSelect.value);
     // Preserve the previously selected boss if it still exists in the filtered set.
     const preferredBoss =
       filterState.selectedBoss && bossesForRaid.has(filterState.selectedBoss)
@@ -536,6 +584,7 @@ export function setupRaidBossFiltering() {
         : null;
     populateDropdown(bossSelect, bossesForRaid, "Boss", {
       latestDateMap,
+      explicitOrder,
       // Keep the dropdown pinned to the already-selected boss when it remains
       // valid for the active raid. Without this, boss-scoped families can
       // briefly fall back to the newest boss and fire a stale activation.

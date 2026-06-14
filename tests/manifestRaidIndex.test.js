@@ -52,6 +52,26 @@ test("parseManifestFileRecord extracts boss-scoped Trial metadata", () => {
   });
 });
 
+test("parseManifestFileRecord extracts boss-scoped UMAD metadata", () => {
+  const record = parseManifestFileRecord(
+    "json/20260612_dancing-mad_whole-fight_dps.json.gz"
+  );
+
+  assert.deepEqual(record, {
+    path: "json/20260612_dancing-mad_whole-fight_dps.json.gz",
+    filename: "20260612_dancing-mad_whole-fight_dps.json.gz",
+    date: "20260612",
+    type: "dps",
+    raid: "Dancing Mad",
+    raidSlug: "dancing-mad",
+    boss: "Whole Fight",
+    bossSlug: "whole-fight",
+    scopeType: "boss",
+    loadTarget: "Dancing Mad::whole-fight",
+    isBossScoped: true,
+  });
+});
+
 test("buildManifestRaidIndex sorts raids by latest date then alphabetically", () => {
   const manifestIndex = buildManifestRaidIndex([
     "json/20260608_trials-iii-extreme_enuo_dps.json.gz",
@@ -119,5 +139,43 @@ test("resolveEffectiveBoss falls back to the newest manifest-derived Trial boss"
   assert.equal(
     resolveEffectiveBoss(manifestIndex, "Trials III (Extreme)", "doomtrain"),
     "Doomtrain"
+  );
+});
+
+test("buildManifestRaidIndex gives UMAD Whole Fight default priority and boss-scoped targets", () => {
+  const manifestIndex = buildManifestRaidIndex([
+    "json/20260612_dancing-mad_p3-exdeath-and-chaos_dps.json.gz",
+    "json/20260612_dancing-mad_p1-kefka_dps.json.gz",
+    "json/20260612_dancing-mad_p5-ultima-kefka_dps.json.gz",
+    "json/20260612_dancing-mad_whole-fight_dps.json.gz",
+    "json/20260612_dancing-mad_p2-forsaken-kefka_dps.json.gz",
+    "json/20260612_dancing-mad_p4-kefka-says_dps.json.gz",
+  ]);
+
+  assert.equal(isBossScopedRaid(manifestIndex, "Dancing Mad"), true);
+  assert.deepEqual(getManifestBossesForRaid(manifestIndex, "Dancing Mad"), [
+    "Whole Fight",
+    "P1: Kefka",
+    "P2: Forsaken Kefka",
+    "P3: Exdeath and Chaos",
+    "P4: Kefka Says",
+    "P5: Ultima Kefka",
+  ]);
+  assert.deepEqual(manifestIndex.loadTargetsByRaid.get("Dancing Mad"), [
+    "Dancing Mad::whole-fight",
+    "Dancing Mad::p1-kefka",
+    "Dancing Mad::p2-forsaken-kefka",
+    "Dancing Mad::p3-exdeath-and-chaos",
+    "Dancing Mad::p4-kefka-says",
+    "Dancing Mad::p5-ultima-kefka",
+  ]);
+  assert.equal(resolveEffectiveBoss(manifestIndex, "Dancing Mad", ""), "Whole Fight");
+  assert.equal(
+    resolveActivationTarget(manifestIndex, "Dancing Mad", ""),
+    "Dancing Mad::whole-fight"
+  );
+  assert.equal(
+    resolveActivationTarget(manifestIndex, "Dancing Mad", "P5: Ultima Kefka"),
+    "Dancing Mad::p5-ultima-kefka"
   );
 });

@@ -211,6 +211,7 @@ test("buildRaidDropdownSections groups known raids into Trial and Savage buckets
     "AAC Heavyweight",
     "Trials III (Extreme)",
     "AAC Cruiserweight",
+    "Dancing Mad",
   ]);
 
   assert.deepEqual(sections, [
@@ -221,6 +222,10 @@ test("buildRaidDropdownSections groups known raids into Trial and Savage buckets
     {
       label: "Savage",
       items: ["AAC Heavyweight", "AAC Cruiserweight"],
+    },
+    {
+      label: "Ultimate",
+      items: ["Dancing Mad"],
     },
   ]);
 });
@@ -460,9 +465,9 @@ test("setupRaidBossFiltering can surface manifest-derived boss options before ro
 
     assert.deepEqual(
       bossSelect.options.map((opt) => opt.value),
-      ["Doomtrain", "Enuo"]
+      ["Enuo", "Doomtrain"]
     );
-    assert.equal(filterState.selectedBoss, "Doomtrain");
+    assert.equal(filterState.selectedBoss, "Enuo");
   } finally {
     filterState.selectedBoss = originalBoss;
     __setBossIndexCacheForTests(previousCache);
@@ -714,6 +719,81 @@ test("setupRaidBossFiltering immediately shows the manifest-derived default boss
 
     assert.equal(filterState.selectedBoss, "Enuo");
     assert.equal(bossTitle.textContent, "Enuo");
+  } finally {
+    filterState.selectedBoss = originalBoss;
+    __setBossIndexCacheForTests(previousCache);
+    restoreDocument();
+  }
+});
+
+test("setupRaidBossFiltering preserves explicit UMAD manifest boss ordering with Whole Fight first", () => {
+  const raidSelect = createMockSelect("raid-select");
+  raidSelect.value = "Dancing Mad";
+  const bossSelect = createMockSelect("boss-select");
+  const bossTitle = {
+    textContent: "",
+    __updateDropdownInteractivity: () => {},
+  };
+  const bossDropdown = {
+    classList: {
+      add() {},
+    },
+  };
+  const restoreDocument = installDocumentWithNodes({
+    "raid-select": raidSelect,
+    "boss-select": bossSelect,
+    "boss-subheader": bossTitle,
+    "boss-dropdown": bossDropdown,
+  });
+  const previousCache = __getBossIndexCacheForTests();
+  const originalBoss = filterState.selectedBoss;
+
+  __setBossIndexCacheForTests({
+    bossesByRaid: {},
+    manifestBossesByRaid: {
+      "Dancing Mad": new Set([
+        "Whole Fight",
+        "P1: Kefka",
+        "P2: Forsaken Kefka",
+        "P3: Exdeath and Chaos",
+        "P4: Kefka Says",
+        "P5: Ultima Kefka",
+      ]),
+    },
+    manifestBossLatestDatesByRaid: {
+      "Dancing Mad": {
+        "Whole Fight": "20260612",
+        "P1: Kefka": "20260612",
+        "P2: Forsaken Kefka": "20260612",
+        "P3: Exdeath and Chaos": "20260612",
+        "P4: Kefka Says": "20260612",
+        "P5: Ultima Kefka": "20260612",
+      },
+    },
+    allBosses: new Set([
+      "Whole Fight",
+      "P1: Kefka",
+      "P2: Forsaken Kefka",
+      "P3: Exdeath and Chaos",
+      "P4: Kefka Says",
+      "P5: Ultima Kefka",
+    ]),
+  });
+  filterState.selectedBoss = "";
+
+  try {
+    setupRaidBossFiltering();
+
+    assert.deepEqual(bossSelect.options.map((opt) => opt.value), [
+      "Whole Fight",
+      "P1: Kefka",
+      "P2: Forsaken Kefka",
+      "P3: Exdeath and Chaos",
+      "P4: Kefka Says",
+      "P5: Ultima Kefka",
+    ]);
+    assert.equal(filterState.selectedBoss, "Whole Fight");
+    assert.equal(bossTitle.textContent, "Whole Fight");
   } finally {
     filterState.selectedBoss = originalBoss;
     __setBossIndexCacheForTests(previousCache);

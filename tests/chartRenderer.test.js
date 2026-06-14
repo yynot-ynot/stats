@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applyFilters,
   buildParseTrendSeries,
+  __preparePlotlyContainerForTests,
   __buildSignedLogAxisConfigForTests,
   __buildWeekTickConfigForTests,
   __getChartDatePresentationForTests,
@@ -351,4 +352,28 @@ test("__buildWeekTickConfigForTests ignores anchors that post-date the available
   };
   const result = __buildWeekTickConfigForTests(labels, compact, anchor);
   assert.deepEqual(result.ticktext, ["4/1 (wk1)", "4/8 (wk2)"]);
+});
+
+test("__preparePlotlyContainerForTests clears stale empty-state markup before rerender", () => {
+  const container = {
+    innerHTML:
+      '<div class="chart-empty-message">No parse data available for the current selection.</div><div class="plot-container"></div>',
+    replaceChildrenCalled: false,
+    replaceChildren() {
+      this.replaceChildrenCalled = true;
+      this.innerHTML = "";
+    },
+  };
+  const plotlyApi = {
+    purgeCalls: [],
+    purge(target) {
+      this.purgeCalls.push(target);
+    },
+  };
+
+  __preparePlotlyContainerForTests(container, plotlyApi);
+
+  assert.equal(container.replaceChildrenCalled, true);
+  assert.equal(container.innerHTML, "");
+  assert.deepEqual(plotlyApi.purgeCalls, [container]);
 });

@@ -2,13 +2,42 @@ const KNOWN_RAID_SLUGS = Object.freeze({
   "aac-heavyweight": "AAC Heavyweight",
   "aac-cruiserweight": "AAC Cruiserweight",
   "trials-iii-extreme": "Trials III (Extreme)",
+  // Keep the manifest/display raid label aligned with the row payloads for
+  // now. The raid dropdown section provides the "Ultimate" context, and a
+  // separate per-surface display abstraction would be needed before using
+  // "Dancing Mad (Ultimate)" in filters/state safely.
+  "dancing-mad": "Dancing Mad",
 });
 
-const BOSS_SCOPED_RAID_SLUGS = new Set(["trials-iii-extreme"]);
+// Boss-scoped families resolve one load target per encounter slice instead of
+// one target per raid. Keep these slugs explicit so expanding to additional
+// content families remains a manifest-layer choice rather than a filename
+// accident.
+const BOSS_SCOPED_RAID_SLUGS = new Set(["trials-iii-extreme", "dancing-mad"]);
 
 const KNOWN_BOSS_SLUGS = Object.freeze({
   doomtrain: "Doomtrain",
   enuo: "Enuo",
+  "whole-fight": "Whole Fight",
+  "p1-kefka": "P1: Kefka",
+  "p2-forsaken-kefka": "P2: Forsaken Kefka",
+  "p3-exdeath-and-chaos": "P3: Exdeath and Chaos",
+  "p4-kefka-says": "P4: Kefka Says",
+  "p5-ultima-kefka": "P5: Ultima Kefka",
+});
+
+// Trial defaults remain recency-driven. UMAD intentionally makes Whole Fight
+// the first/default target while leaving the per-phase ordering stable and
+// deterministic for the dropdown and warm-cache queue.
+const BOSS_PRIORITY_BY_RAID_SLUG = Object.freeze({
+  "dancing-mad": [
+    "whole-fight",
+    "p1-kefka",
+    "p2-forsaken-kefka",
+    "p3-exdeath-and-chaos",
+    "p4-kefka-says",
+    "p5-ultima-kefka",
+  ],
 });
 
 /**
@@ -161,7 +190,19 @@ export function buildManifestRaidIndex(filePaths) {
   });
 
   loadTargetsByRaid.forEach((targets, raid) => {
+    const raidSlug = targets
+      .map((target) => targetMetadataByKey.get(target)?.raidSlug)
+      .find(Boolean);
     targets.sort((targetA, targetB) => {
+      const explicitPriority = compareBossTargetPriority(
+        targetA,
+        targetB,
+        targetMetadataByKey,
+        raidSlug
+      );
+      if (explicitPriority !== null) {
+        return explicitPriority;
+      }
       const dateA = latestDateByLoadTarget[targetA] || "";
       const dateB = latestDateByLoadTarget[targetB] || "";
       if (dateA === dateB) {
@@ -176,6 +217,14 @@ export function buildManifestRaidIndex(filePaths) {
 
     if (bossOptionsByRaid[raid]?.length) {
       bossOptionsByRaid[raid].sort((bossA, bossB) => {
+        const explicitPriority = compareBossLabelPriority(
+          bossA,
+          bossB,
+          raidSlug
+        );
+        if (explicitPriority !== null) {
+          return explicitPriority;
+        }
         const targetA = resolveLoadTargetForBossLabel(
           raid,
           bossA,
@@ -416,4 +465,74 @@ function resolveLoadTargetForBossLabel(raid, boss, targetMetadataByKey) {
   }
 
   return "";
+}
+
+/**
+ * Compare two boss-scoped target keys using any explicit per-raid priority.
+ * Returns `null` when the raid family does not define a custom order so the
+ * caller can fall back to its normal date/alphabetical sorting.
+ *
+ * @param {string} targetA
+ * @param {string} targetB
+ * @param {Map<string, Object>} targetMetadataByKey
+ * @param {string} raidSlug
+ * @returns {number|null}
+ */
+function compareBossTargetPriority(
+  targetA,
+  targetB,
+  targetMetadataByKey,
+  raidSlug
+) {
+  const orderedBossSlugs = BOSS_PRIORITY_BY_RAID_SLUG[raidSlug];
+  if (!orderedBossSlugs?.length) {
+    return null;
+  }
+
+  const bossSlugA = targetMetadataByKey.get(targetA)?.bossSlug || "";
+  const bossSlugB = targetMetadataByKey.get(targetB)?.bossSlug || "";
+  return compareBossSlugPriority(bossSlugA, bossSlugB, orderedBossSlugs);
+}
+
+/**
+ * Compare two boss display labels using any explicit per-raid priority.
+ * Returns `null` when no custom order applies.
+ *
+ * @param {string} bossA
+ * @param {string} bossB
+ * @param {string} raidSlug
+ * @returns {number|null}
+ */
+function compareBossLabelPriority(bossA, bossB, raidSlug) {
+  const orderedBossSlugs = BOSS_PRIORITY_BY_RAID_SLUG[raidSlug];
+  if (!orderedBossSlugs?.length) {
+    return null;
+  }
+
+  const bossSlugA = resolveBossSlugFromDisplayLabel(bossA);
+  const bossSlugB = resolveBossSlugFromDisplayLabel(bossB);
+  return compareBossSlugPriority(bossSlugA, bossSlugB, orderedBossSlugs);
+}
+
+function compareBossSlugPriority(bossSlugA, bossSlugB, orderedBossSlugs) {
+  const aIndex = orderedBossSlugs.indexOf(bossSlugA);
+  const bIndex = orderedBossSlugs.indexOf(bossSlugB);
+  if (aIndex === -1 && bIndex === -1) {
+    return null;
+  }
+  if (aIndex === -1) {
+    return 1;
+  }
+  if (bIndex === -1) {
+    return -1;
+  }
+  return aIndex - bIndex;
+}
+
+function resolveBossSlugFromDisplayLabel(label) {
+  const normalized = normalizeBossLabelForComparison(label);
+  const matchedEntry = Object.entries(KNOWN_BOSS_SLUGS).find(
+    ([, displayLabel]) => normalizeBossLabelForComparison(displayLabel) === normalized
+  );
+  return matchedEntry?.[0] || normalized;
 }
